@@ -32,6 +32,7 @@
   TODO:
     * Configure real time with BLE                          []
     * Implement OTA                                         []
+    ** Make linear light gradient                           []
 
   BUGS:
     *
