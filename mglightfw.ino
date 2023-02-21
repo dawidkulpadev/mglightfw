@@ -26,11 +26,11 @@
     - Connects to WiFi specified in non volatile memory
     - Config mode for WiFi and MG Light API configuration
     - Configurable with MioGiapicco Home App (BLE connection)
+    - Enter config mode if button is pressed on startup
+    - Factory reset on veeeeery long button press (>15s)
 
   TODO:
     * Configure real time with BLE                          []
-    ** Enter config mode if button is pressed on startup    []
-    ** Factory reset on veeeeery long button press (>15s)   [...]
     * Implement OTA                                         []
 
   BUGS:
@@ -75,6 +75,8 @@ PWMLed light(0, INTENSITY_PIN, 2000);
 Day day;
 MGLightAPI *serverAPI;
 std::string timezone;
+
+Ticker configButtonTicker;
 
 bool syncWithNTP(const std::string &tz) {
   uint16_t reptCnt= 5;
@@ -131,6 +133,38 @@ void printHello(){
   Serial.println("You should have received a copy of the GNU General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.");  
 }
 
+#define FACTORY_RESET_BLINKS_CNT  6
+#define FACTORY_RESET_BLINKS_INTERVAL 200
+
+void factoryReset(){
+  // Signal with led fask blinks
+  for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
+    digitalWrite(SYS_LED_PIN, LOW);
+    delay(FACTORY_RESET_BLINKS_INTERVAL);
+    digitalWrite(SYS_LED_PIN, HIGH);
+    delay(FACTORY_RESET_BLINKS_INTERVAL);
+  }
+
+  // Remove WiFi config file
+  ConfigManager::clearWifiConfig();
+  esp_restart();  
+}
+
+int btnPressCnt=0; 
+void countButtonPressPeriod(){
+  // Count button press passes
+    if(digitalRead(SWITCH_PIN)==LOW){
+      btnPressCnt++;
+    } else {
+      btnPressCnt=0;
+    }
+
+    // Factory Reset if button pressed for over 15s (15 passes for 1000ms loop delay)
+    if(btnPressCnt>15){
+      factoryReset();
+    }
+}
+
 void setup() {
     mode= MODE_NORMAL;
 
@@ -148,7 +182,16 @@ void setup() {
     //Read wifi configuration
     ConfigManager::init();
     DeviceConfig config;
-    if(!ConfigManager::readWifi(&config)){
+
+    bool buttonPressed= false;
+
+    if(digitalRead(SWITCH_PIN)==LOW){
+      delay(25);
+      if(digitalRead(SWITCH_PIN)==LOW)
+        buttonPressed= true;
+    }
+    
+    if(buttonPressed || !ConfigManager::readWifi(&config)){
       mode= MODE_CONFIG;
     } else {
       Serial.println("Reading timezone...");
@@ -167,6 +210,7 @@ void setup() {
             Serial.println("Day config file not found :(");
         Serial.printf("Day config:\r\n\tDLI: %d\r\n\tDS: %d\r\n\tDE: %d\r\n\tSSD: %d\r\n\tSRD: %d\r\n",
                                 day.getDli(), day.getDs(), day.getDe(), day.getSsd(), day.getSrd());
+        configButtonTicker.attach(1, countButtonPressPeriod);
     } else {
       // Config mode
     }
@@ -174,13 +218,9 @@ void setup() {
     digitalWrite(SYS_LED_PIN, HIGH);
 }
 
-void factoryReset(){
+int lastWifi=-WIFI_RUN_INTERVAL;
+int lastAPI=-(API_RUN_INTERVAL/2);
 
-}
-
-int lastWifi=-WIFI_RUN_INTERVAL*1000;
-int lastAPI=-(API_RUN_INTERVAL/2)*1000;
-int btnPressCnt=0;
 
 void loop() {
   if(mode==MODE_CONFIG){
@@ -191,53 +231,41 @@ void loop() {
   } else {
     delay(200);
 
-    // Count button press passes
-    if(digitalRead(SWITCH_PIN)==LOW){
-      btnPressCnt++;
-    } else {
-      btnPressCnt=0;
-    }
-
-    // Factory Reset if button pressed for over 15s (75 passes for 200ms loop delay)
-    if(btnPressCnt>75){
-      factoryReset();
-    }
-
     // Set pwm infill
-    int ms= time(nullptr);
+    int nows= time(nullptr);    // [seconds]
     float intensity= day.getIntensity(nowTime());
     light.set(intensity);
 
     // 
-    if(lastWifi+(WIFI_RUN_INTERVAL*1000) < ms){
-      lastWifi = ms;
+    if(lastWifi+WIFI_RUN_INTERVAL < nows){
+      lastWifi = nows;
       if(WiFi.isConnected()) {
         Serial.println("WiFi Connected...");
         if(!timeisset){
           timeisset=syncWithNTP(timezone);
-          ms= time(nullptr);
+          nows= time(nullptr);
         }
       } else {
-        lastWifi-= (WIFI_RUN_INTERVAL*1000)-10000;
+        lastWifi-= WIFI_RUN_INTERVAL-10;
         Serial.println("WiFi Disconnected...");
       }
     }
 
-    if(lastAPI+(API_RUN_INTERVAL*1000) < ms){
+    if(lastAPI+API_RUN_INTERVAL < nows){
         //if(timeisset){
           digitalWrite(SYS_LED_PIN, LOW);
           if(WiFi.isConnected()){
               serverAPI->talkWithServer();
           } else {
-            lastAPI-= (API_RUN_INTERVAL*1000)-10000;
+            lastAPI-= API_RUN_INTERVAL-10;
           }
-          delay(200);
           digitalWrite(SYS_LED_PIN, HIGH);
         //} else {
           //Serial.println("Real time not set yet...");
         //}
 
-        lastAPI= ms;
+        lastAPI= nows;
     }
   }
 }
+  

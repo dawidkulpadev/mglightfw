@@ -117,6 +117,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_pa
     ch_setFlag->setValue("0");
     ch_setFlag->notify();
     Serial.println("Configuration received");
+    esp_restart();
   }
 }
 
