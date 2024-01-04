@@ -37,6 +37,8 @@ public:
     static bool readDay(Day *day);
     static bool clearWifiConfig();
 
+    static bool readCaStore(unsigned char *c) ;
+
 private:
     static const char* wcfn; // WiFi config file name
     static const char* dcfn; // Day config file name

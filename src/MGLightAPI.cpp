@@ -19,7 +19,6 @@
 */
 
 #include "MGLightAPI.h"
-#include "SystemUpgrader.h"
 
 MGLightAPI::MGLightAPI(int uid, const char* picklock, Day *day) {
     this->day= day;
@@ -43,7 +42,7 @@ void MGLightAPI::talkWithServer() {
   client->setCACertBundle(rootca_crt_bundle_start);
 
   HTTPClient https;
-  if (https.begin(*client, "https://dawidkulpa.pl/apis/miogiapicco/light/get.php")) {  // HTTPS
+  if (https.begin(*client, api_url+"/get.php")) {  // HTTPS
     char postBody[256];
 
     sprintf(postBody, MGLIGHTAPI_POST_DATA_FORMAT, id.c_str(), uid, picklock, fw_version);
@@ -87,16 +86,15 @@ void MGLightAPI::talkWithServer() {
                 day->setSrd(val);
 
             // Read upgrade allowed value
-            val= getUIntValue(payload, "\"UA\"");
-            if(val == 1){
-                //Read the latest firmware version value
-                int lfwv= getUIntValue(payload, "\"LFWV\"");
-                if(lfwv!=fw_version)
-                    SystemUpgrader::upgrade(*client, lfwv, id, picklock, uid);
-            }
+            int ua= getUIntValue(payload, "\"UA\":");
 
-            Serial.printf("Day config:\r\n\tDLI: %d\r\n\tDS: %d\r\n\tDE: %d\r\n\tSSD: %d\r\n\tSRD: %d\r\n",
-                                day->getDli(), day->getDs(), day->getDe(), day->getSsd(), day->getSrd());
+            Serial.printf("Update available: %d\r\nDay config:\r\n\tDLI: %d\r\n\tDS: %d\r\n\tDE: %d\r\n\tSSD: %d\r\n\tSRD: %d\r\n",
+                                ua, day->getDli(), day->getDs(), day->getDe(), day->getSsd(), day->getSrd());
+
+            if(ua == 1){
+                delay(200);
+                upgrade(*client);
+            }
 
             ConfigManager::writeDay(day);
             success = true;
@@ -128,11 +126,41 @@ int MGLightAPI::getUIntValue(const String &text, const String &key){
     unsigned int klen= key.length();
 
     if(kpos >= 0){
-        if(vend>=0)
-            return text.substring(kpos+klen+1,vend-1).toInt();
-        else
-            return text.substring(kpos+klen+1).toInt();
+        return text.substring(kpos + klen).toInt();
     } else {
         return -1;
     }
+}
+
+MGLightAPI::UpgradeResult MGLightAPI::upgrade(WiFiClientSecure& cli) {
+    String url= api_url+"/upgrade.php";
+
+    httpUpdate.rebootOnUpdate(true);
+    httpUpdate.onProgress([](int done, int size){
+        Serial.print("\rSystem upgrade: "+String( static_cast<int>((static_cast<double>(done)/static_cast<double>(size))*100.0) )+"%");
+    });
+
+    t_httpUpdate_return ret = httpUpdate.update(cli, url.c_str(), "",[this](HTTPClient *client) {
+        client->addHeader("x-mg-auth-id", this->id);
+        client->addHeader("x-mg-auth-pl", this->picklock);
+        client->addHeader("x-mg-auth-uid", String(this->uid));
+        client->addHeader("x-mg-fwv", String(fw_version));
+        Serial.println("System upgrade start!");
+    });
+
+    switch (ret) {
+        case HTTP_UPDATE_FAILED:
+            Serial.printf("HTTP_UPDATE_FAILED Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+            return UpgradeResult::Failed;
+
+        case HTTP_UPDATE_NO_UPDATES:
+            Serial.println("HTTP_UPDATE_NO_UPDATES");
+            return UpgradeResult::Failed;
+
+        case HTTP_UPDATE_OK:
+            Serial.println("HTTP_UPDATE_OK");
+            return UpgradeResult::Ok;
+    }
+
+    return UpgradeResult::Failed;
 }

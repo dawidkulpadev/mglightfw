@@ -47,7 +47,7 @@ class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks 
     void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param);
     void onConnect(BLEServer* s);
     void onDisconnect(BLEServer* s);
-    bool isConnected();
+    bool isConnected() const;
 
   private:
     bool deviceConnected;

@@ -29,10 +29,11 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include "caCertsBundle.h"
+#include <HTTPUpdate.h>
+#include "consts.h"
 
 #include "ConfigManager.h"
 #include "Day.h"
-#include "consts.h"
 
 #define MGLIGHTAPI_POST_DATA_FORMAT "id=%s&uid=%d&picklock=%s&fv=%d"
 
@@ -40,8 +41,10 @@ using namespace std;
 
 class MGLightAPI {
 public:
+    enum UpgradeResult {Ok, Failed, HwMismatch};
     MGLightAPI(int uid, const char* picklock, Day *day);
     void talkWithServer();
+    UpgradeResult upgrade(WiFiClientSecure& cli);
 
 private:
     static int getUIntValue(const String &text, const String &key);

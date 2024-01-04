@@ -42,7 +42,7 @@
 
 #include <Arduino.h>
 
-#include <time.h>
+#include <ctime>
 
 #include "PWMLed.h"
 #include "Day.h"

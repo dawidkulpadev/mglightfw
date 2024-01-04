@@ -142,3 +142,16 @@ bool ConfigManager::readDay(Day *day){
 bool ConfigManager::clearWifiConfig() {
     return LittleFS.remove(ConfigManager::wcfn);
 }
+
+bool ConfigManager::readCaStore(unsigned char *c) {
+    File casFile= LittleFS.open("cert.store", FILE_READ);
+
+    if(casFile) {
+        c = new unsigned char[casFile.size()];
+        casFile.read(c, casFile.size());
+    } else {
+        return false;
+    }
+
+    return true;
+}

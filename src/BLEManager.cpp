@@ -69,7 +69,7 @@ bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig){
 
   if(deviceConfig->getSsid()!=nullptr)
     ch_wifiSSID->setValue(std::string(deviceConfig->getSsid()));
-    if(deviceConfig->getPsk()!=nullptr)
+  if(deviceConfig->getPsk()!=nullptr)
     ch_wifiPSK->setValue(std::string(deviceConfig->getPsk()));
   if(deviceConfig->getUid()!=nullptr)
     ch_uid->setValue(std::string(deviceConfig->getUid()));
@@ -126,9 +126,10 @@ void BLEManager::onConnect(BLEServer* s){
 }
 void BLEManager::onDisconnect(BLEServer* s){
   deviceConnected= false;
+  server->getAdvertising()->start();
   Serial.println("BLE device disconnected");
 }
 
-bool BLEManager::isConnected(){
+bool BLEManager::isConnected() const{
   return deviceConnected;
 }
