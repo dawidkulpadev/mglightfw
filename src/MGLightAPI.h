@@ -35,7 +35,9 @@
 #include "ConfigManager.h"
 #include "Day.h"
 
-#define MGLIGHTAPI_POST_DATA_FORMAT "id=%s&uid=%d&picklock=%s&fv=%d"
+#include "InternalTempSensor.h"
+
+#define MGLIGHTAPI_POST_DATA_FORMAT "id=%s&uid=%d&picklock=%s&fv=%d&t=%d"
 
 using namespace std;
 

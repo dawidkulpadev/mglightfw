@@ -139,7 +139,7 @@ void printHello(){
 #define FACTORY_RESET_BLINKS_INTERVAL 200
 
 void factoryReset(){
-    // Signal with led fask blinks
+    // Signal with led fast blinks
     for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
         digitalWrite(SYS_LED_PIN, LOW);
         delay(FACTORY_RESET_BLINKS_INTERVAL);

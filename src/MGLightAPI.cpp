@@ -45,7 +45,9 @@ void MGLightAPI::talkWithServer() {
   if (https.begin(*client, api_url+"/get.php")) {  // HTTPS
     char postBody[256];
 
-    sprintf(postBody, MGLIGHTAPI_POST_DATA_FORMAT, id.c_str(), uid, picklock, fw_version);
+    float t= InternalTempSensor_read();
+
+    sprintf(postBody, MGLIGHTAPI_POST_DATA_FORMAT, id.c_str(), uid, picklock, fw_version, (int)t);
     // start connection and send HTTPS header
 
     Serial.println(postBody);
@@ -122,7 +124,6 @@ void MGLightAPI::talkWithServer() {
 
 int MGLightAPI::getUIntValue(const String &text, const String &key){
     int kpos= text.indexOf(key);
-    int vend= text.indexOf('&', kpos);
     unsigned int klen= key.length();
 
     if(kpos >= 0){
