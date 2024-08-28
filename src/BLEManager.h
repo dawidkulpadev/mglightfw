@@ -36,18 +36,23 @@
 #include <BLEServer.h>
 #include "BLECharacteristic.h"
 #include "BLE2902.h"
+#include "Ticker.h"
 
 #include "Arduino.h"
 #include "ConfigManager.h"
 #include "DeviceConfig.h"
+#include "PWMLed.h"
 
 class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks {
   public:
-    bool start(uint8_t *mac, DeviceConfig *deviceConfig);
-    void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param);
-    void onConnect(BLEServer* s);
-    void onDisconnect(BLEServer* s);
+    bool start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed);
+    void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param) override;
+    void onConnect(BLEServer* s) override;
+    void onDisconnect(BLEServer* s) override;
     bool isConnected() const;
+
+    void updateHeartBeat();
+    static void updateHeartBeatCall(BLEManager *bleManager);
 
   private:
     bool deviceConnected;
@@ -62,6 +67,10 @@ class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks 
     BLECharacteristic *ch_mac;
     BLECharacteristic *ch_setFlag;
     BLECharacteristic *ch_timezone;
+
+    PWMLed *pwmLed;
+    Ticker heartBeatTicker;
+    int hearBeatState;
 };
 
 

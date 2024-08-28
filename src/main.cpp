@@ -52,11 +52,7 @@
 #include "BLEManager.h"
 #include "WiFiManager.h"
 
-
-#define SYS_LED_PIN   5
-#define INTENSITY_PIN 4
-#define SWITCH_PIN    10
-#define PHOTODIODE_PIN 0
+#include "config.h"
 
 #define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
@@ -72,12 +68,17 @@ int mode;
 WiFiManager wifiManager;
 BLEManager bleManager;
 
-PWMLed light(0, INTENSITY_PIN, 2000);
+PWMLed light(0, pinout_intensity, 200);
 Day day;
 MGLightAPI *serverAPI;
 std::string timezone;
 
 Ticker configButtonTicker;
+Ticker sunUpdateTicker;
+
+void updateTicker(){
+
+}
 
 bool syncWithNTP(const std::string &tz) {
     uint16_t reptCnt= 15;
@@ -112,19 +113,22 @@ int nowTime(){
         return 0;
     }
 
+    time_t t;
+    time(&t);
+
     return timeinfo.tm_hour*3600 + timeinfo.tm_min*60 + timeinfo.tm_sec;
 }
 
-void setupConnectivity(int mode, DeviceConfig &config){
-    if(mode==MODE_NORMAL) {
+void setupConnectivity(int m, DeviceConfig &config){
+    if(m == MODE_NORMAL) {
         Serial.println("Normal mode");
         esp_bt_controller_disable();
         wifiManager.initNormalMode(config.getSsid(), config.getPsk());
 
         serverAPI = new MGLightAPI(atoi(config.getUid()), config.getPicklock(), &day);
-    } else if(mode==MODE_CONFIG){
+    } else if(m == MODE_CONFIG){
         Serial.println("Config mode");
-        bleManager.start(wifiManager.getMAC(), &config);
+        bleManager.start(wifiManager.getMAC(), &config, &light);
     }
 }
 
@@ -133,6 +137,7 @@ void printHello(){
     Serial.println("This program comes with ABSOLUTELY NO WARRANTY;");
     Serial.println("This is free software, and you are welcome to redistribute it under certain conditions;");
     Serial.println("You should have received a copy of the GNU General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.");
+    Serial.printf("Hardware code: %d, Firmware code: %d\r\n", hw_id, fw_version);
 }
 
 #define FACTORY_RESET_BLINKS_CNT  6
@@ -141,9 +146,9 @@ void printHello(){
 void factoryReset(){
     // Signal with led fast blinks
     for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
-        digitalWrite(SYS_LED_PIN, LOW);
+        digitalWrite(pinout_sys_led, LOW);
         delay(FACTORY_RESET_BLINKS_INTERVAL);
-        digitalWrite(SYS_LED_PIN, HIGH);
+        digitalWrite(pinout_sys_led, HIGH);
         delay(FACTORY_RESET_BLINKS_INTERVAL);
     }
 
@@ -155,7 +160,7 @@ void factoryReset(){
 int btnPressCnt=0;
 void countButtonPressPeriod(){
     // Count button press passes
-    if(digitalRead(SWITCH_PIN)==LOW){
+    if(digitalRead(pinout_switch)==LOW){
         btnPressCnt++;
     } else {
         btnPressCnt=0;
@@ -171,11 +176,11 @@ void setup() {
     mode= MODE_NORMAL;
 
     //Setup leds
-    pinMode(SWITCH_PIN, INPUT_PULLUP);
-    pinMode(SYS_LED_PIN, OUTPUT);
-    pinMode(PHOTODIODE_PIN, OUTPUT);
-    digitalWrite(PHOTODIODE_PIN, LOW);
-    digitalWrite(SYS_LED_PIN, LOW);
+    pinMode(pinout_switch, INPUT_PULLUP);
+    pinMode(pinout_sys_led, OUTPUT);
+    pinMode(pinout_fan, OUTPUT);
+    digitalWrite(pinout_fan, LOW);
+    digitalWrite(pinout_sys_led, LOW);
 
     Serial.begin(115200);
     Serial.println("");
@@ -189,9 +194,9 @@ void setup() {
 
     bool buttonPressed= false;
 
-    if(digitalRead(SWITCH_PIN)==LOW){
+    if(digitalRead(pinout_switch)==LOW){
         delay(25);
-        if(digitalRead(SWITCH_PIN)==LOW)
+        if(digitalRead(pinout_switch)==LOW)
             buttonPressed= true;
     }
 
@@ -207,8 +212,8 @@ void setup() {
     setupConnectivity(mode, config);
 
     //Setup "threads"
+    light.start();
     if(mode==MODE_NORMAL) {
-        light.start();
         Serial.println("Reading Day config file...");
         if(!ConfigManager::readDay(&day))
             Serial.println("Day config file not found :(");
@@ -216,10 +221,11 @@ void setup() {
                       day.getDli(), day.getDs(), day.getDe(), day.getSsd(), day.getSrd());
         configButtonTicker.attach(1, countButtonPressPeriod);
     } else {
+        light.set(0);
         // Config mode
     }
 
-    digitalWrite(SYS_LED_PIN, HIGH);
+    digitalWrite(pinout_sys_led, HIGH);
 }
 
 int lastWifi=-WIFI_RUN_INTERVAL;
@@ -229,20 +235,21 @@ int lastAPI=-(API_RUN_INTERVAL/2);
 void loop() {
     if(mode==MODE_CONFIG){
         delay(500);
-        digitalWrite(SYS_LED_PIN, HIGH);
+        digitalWrite(pinout_sys_led, HIGH);
         delay(500);
-        digitalWrite(SYS_LED_PIN, LOW);
+        digitalWrite(pinout_sys_led, LOW);
     } else {
         delay(200);
 
         // Set pwm infill
         int nows= time(nullptr);    // [seconds]
         float intensity= day.getIntensity(nowTime());
+        Serial.printf("Intensity: %f\r\n", intensity);
         light.set(intensity);
         if(intensity>50.0){
-            digitalWrite(PHOTODIODE_PIN, HIGH);
+            digitalWrite(pinout_fan, HIGH);
         } else {
-            digitalWrite(PHOTODIODE_PIN, LOW);
+            digitalWrite(pinout_fan, LOW);
         }
 
         //
@@ -262,13 +269,13 @@ void loop() {
 
         if(lastAPI+API_RUN_INTERVAL < nows){
             //if(timeisset){
-            digitalWrite(SYS_LED_PIN, LOW);
+            digitalWrite(pinout_sys_led, LOW);
             if(WiFi.isConnected()){
                 serverAPI->talkWithServer();
             } else {
                 lastAPI-= API_RUN_INTERVAL-10;
             }
-            digitalWrite(SYS_LED_PIN, HIGH);
+            digitalWrite(pinout_sys_led, HIGH);
             //} else {
             //Serial.println("Real time not set yet...");
             //}

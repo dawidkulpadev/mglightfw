@@ -21,9 +21,11 @@
 #include "BLEManager.h"
 
 
-bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig){
+bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed){
   deviceConnected= false;
   BLEDevice::init("MioGiapicco Light");
+
+  this->pwmLed= sunLed;
 
   server = BLEDevice::createServer();
   server->setCallbacks(this);
@@ -117,9 +119,10 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_pa
     ch_setFlag->setValue("0");
     ch_setFlag->notify();
     Serial.println("Configuration received");
+    Serial.printf("Picklock: %s\r\n", picklock.c_str());
 
     // Wait 2s and restart device
-    delay(2000);
+    delay(8000);
     esp_restart();
   }
 }
@@ -127,13 +130,26 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_pa
 void BLEManager::onConnect(BLEServer* s){
   deviceConnected= true;
   Serial.println("BLE device connected");
+
+  heartBeatTicker.attach_ms(1, BLEManager::updateHeartBeatCall, this);
+
 }
 void BLEManager::onDisconnect(BLEServer* s){
   deviceConnected= false;
   server->getAdvertising()->start();
   Serial.println("BLE device disconnected");
+
+  heartBeatTicker.detach();
 }
 
 bool BLEManager::isConnected() const{
   return deviceConnected;
+}
+
+void BLEManager::updateHeartBeatCall(BLEManager *bleManager) {
+    bleManager->updateHeartBeat();
+}
+
+void BLEManager::updateHeartBeat() {
+    hearBeatState++;
 }

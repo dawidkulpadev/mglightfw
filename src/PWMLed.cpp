@@ -1,4 +1,3 @@
-#include "driver/ledc.h"
 /**
     MioGiapicco Light Firmware - Firmware for Light Device of MioGiapicco system
     Copyright (C) 2023  Dawid Kulpa
@@ -21,37 +20,22 @@
 
 #include "PWMLed.h"
 
-bool PWMLed::fadingInstalled= false;
-
-PWMLed::PWMLed(uint8_t ch, uint8_t pin, uint16_t freq, uint16_t fadingChangeTime) {
+PWMLed::PWMLed(uint8_t ch, uint8_t pin, uint16_t freq) {
     this->ch= ch;
     this->pin= pin;
     this->freq= freq;
-    this->fcht= fadingChangeTime;
 }
 
-void PWMLed::start() {
-    ledcSetup(this->ch, this->freq, 12);
+void PWMLed::start() const {
+    ledcSetup(this->ch, this->freq, 14);
     ledcAttachPin(this->pin, this->ch);
-
-    /*install hw fade on channel/timer 0 */
-    if(this->fcht > 0){
-      if(!PWMLed::fadingInstalled){
-        ledc_fade_func_install(0);
-        PWMLed::fadingInstalled= true;
-      }
-    }
 
     set(100);
 }
 
 // val is 0% - 100%
-void PWMLed::set(float val) {
-  uint32_t duty = (val/100.0) * 4095;
-  if(this->fcht>0){
-    ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, (ledc_channel_t)this->ch, duty, 5000);
- //   ledc_fade_start( speed_mode, (ledc_channel_t)this->ch, LEDC_FADE_NO_WAIT );
-  } else {
+void PWMLed::set(float val) const {
+    uint32_t duty = static_cast<uint32_t>((val/100.0) * 16363);
+    Serial.printf("Duty cycle: %d\r\n", duty);
     ledcWrite(this->ch, duty);
-  }
 }

@@ -24,21 +24,16 @@
 #include <Arduino.h>
 #include "driver/ledc.h"
 
-#define PWMLED_V_INSTANT    0
-#define PWMLED_MAX          1000
-
 class PWMLed {
 public:
-    PWMLed(uint8_t ch, uint8_t pin, uint16_t freq, uint16_t fadingChangeTime=0);
-    void start();
-    void set(float val);
+    PWMLed(uint8_t ch, uint8_t pin, uint16_t freq);
+    void start() const;
+    void set(float val) const;
 
 private:
-    static bool fadingInstalled;
     uint8_t ch;
     uint8_t pin;
     uint16_t freq;
-    uint16_t fcht; // Fading change time
 };
 
 

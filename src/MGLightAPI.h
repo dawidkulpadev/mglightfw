@@ -30,7 +30,7 @@
 #include <WiFiClientSecure.h>
 #include "caCertsBundle.h"
 #include <HTTPUpdate.h>
-#include "consts.h"
+#include "config.h"
 
 #include "ConfigManager.h"
 #include "Day.h"

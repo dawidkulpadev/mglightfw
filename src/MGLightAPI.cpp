@@ -30,6 +30,7 @@ MGLightAPI::MGLightAPI(int uid, const char* picklock, Day *day) {
     sprintf(idBuf, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     id= String(idBuf);
 
+    Serial.println(picklock);
     this->picklock= new char[strlen(picklock)+1];
     strcpy(this->picklock, picklock);
 }
@@ -40,6 +41,8 @@ void MGLightAPI::talkWithServer() {
   std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
 
   client->setCACertBundle(rootca_crt_bundle_start);
+
+  Serial.println(picklock);
 
   HTTPClient https;
   if (https.begin(*client, api_url+"/get.php")) {  // HTTPS
