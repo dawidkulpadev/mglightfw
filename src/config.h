@@ -47,7 +47,7 @@ constexpr uint32_t hw_id= (hw_type<<10) | hw_version;
 
 constexpr uint32_t sw_epoch= 3;
 constexpr uint32_t sw_epoch_version= 1;
-constexpr uint32_t sw_epoch_version_fix= 3;
+constexpr uint32_t sw_epoch_version_fix= 4;
 constexpr uint32_t sw_version= (sw_epoch << 11) | (sw_epoch_version << 4) | sw_epoch_version_fix;
 
 constexpr uint32_t fw_version= (hw_id << 16) | sw_version;

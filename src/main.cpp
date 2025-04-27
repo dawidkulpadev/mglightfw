@@ -221,7 +221,7 @@ void setup() {
                       day.getDli(), day.getDs(), day.getDe(), day.getSsd(), day.getSrd());
         configButtonTicker.attach(1, countButtonPressPeriod);
     } else {
-        light.set(0);
+        light.setIntensity(0);
         // Config mode
     }
 
@@ -263,11 +263,11 @@ void loop() {
         delay(200);
 
         // Set pwm infill
-        int nows= time(nullptr);    // [seconds]
-        float intensity= day.getIntensity(nowTime());
+        int nows= static_cast<int>(time(nullptr));    // [seconds]
+        float intensity= day.getSunIntensity(nowTime(), light.getIntensity());
         Serial.printf("Intensity: %f\r\n", intensity);
-        light.set(intensity);
-        if(intensity>50.0){
+        light.setIntensity(intensity);
+        if(intensity>50.0) {
             digitalWrite(pinout_fan, HIGH);
         } else {
             digitalWrite(pinout_fan, LOW);
@@ -289,7 +289,7 @@ void loop() {
         }
 
         if(lastAPI+API_RUN_INTERVAL < nows){
-            //if(timeisset){
+            // if(timeisset){
             digitalWrite(pinout_sys_led, LOW);
             if(WiFi.isConnected()){
                 serverAPI->talkWithServer();
@@ -297,9 +297,9 @@ void loop() {
                 lastAPI-= API_RUN_INTERVAL-10;
             }
             digitalWrite(pinout_sys_led, HIGH);
-            //} else {
-            //Serial.println("Real time not set yet...");
-            //}
+            // } else {
+            // Serial.println("Real time not set yet...");
+            // }
 
             lastAPI= nows;
         }

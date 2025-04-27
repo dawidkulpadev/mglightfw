@@ -24,25 +24,33 @@ Day::Day() {
   
 }
 
-float Day::getIntensity(uint32_t dayTime) {
+float Day::getSunIntensity(uint32_t dayTime, float lastIntensity) {
     double perc;
-
     int mins= dayTime/60;
 
-    if(mins >= (DS+SRD) && mins<=(DE-SSD)){
+    double lastPerc= (lastIntensity*10.0)/DLI;
+
+    if(mins >= (DS+SRD) && mins<=(DE-SSD)){ // Full day
         perc= 1.0;
-    } else if(mins>DS && mins<(DS+SRD)){
+    } else if(mins>DS && mins<(DS+SRD)){ // Sunrise
         double a= 1.0/(double)SRD;
         double b= -a*(double)DS;
 
         perc= (a*(double)mins)+b;
-    } else if(mins>(DE-SSD) && mins<DE) {
-        //Get pulse level (Sunset)
+
+        if(perc<lastPerc){
+            perc= lastPerc;
+        }
+    } else if(mins>(DE-SSD) && mins<DE) { // Sunset
         double a= -1.0/(double)SSD;
         double b= -a*(double)DE;
 
         perc= (a*(double)mins)+b;
-    } else {
+
+        if(perc>lastPerc){
+            perc= lastPerc;
+        }
+    } else { // Night
         perc= 0.0;
     }
 

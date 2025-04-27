@@ -28,7 +28,7 @@ class Day {
 public:
     Day();
 
-    float getIntensity(uint32_t dayTime);
+    float getSunIntensity(uint32_t dayTime, float lastIntensity);
 
     void setDli(int dli);
     void setDs(int ds);

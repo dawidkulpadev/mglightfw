@@ -27,13 +27,15 @@
 class PWMLed {
 public:
     PWMLed(uint8_t ch, uint8_t pin, uint16_t freq);
-    void start() const;
-    void set(float val) const;
+    void start();
+    void setIntensity(float val);
+    float getIntensity() const;
 
 private:
     uint8_t ch;
     uint8_t pin;
     uint16_t freq;
+    float intensity;
 };
 
 

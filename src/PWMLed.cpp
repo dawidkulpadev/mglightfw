@@ -24,18 +24,24 @@ PWMLed::PWMLed(uint8_t ch, uint8_t pin, uint16_t freq) {
     this->ch= ch;
     this->pin= pin;
     this->freq= freq;
+    this->intensity= 0.0;
 }
 
-void PWMLed::start() const {
+void PWMLed::start() {
     ledcSetup(this->ch, this->freq, 14);
     ledcAttachPin(this->pin, this->ch);
 
-    set(100);
+    setIntensity(100.0);
 }
 
 // val is 0% - 100%
-void PWMLed::set(float val) const {
-    uint32_t duty = static_cast<uint32_t>((val/100.0) * 16363);
+void PWMLed::setIntensity(float val) {
+    intensity = val;
+    auto duty = static_cast<uint32_t>((val/100.0) * 16363);
     Serial.printf("Duty cycle: %d\r\n", duty);
     ledcWrite(this->ch, duty);
+}
+
+float PWMLed::getIntensity() const {
+    return intensity;
 }
