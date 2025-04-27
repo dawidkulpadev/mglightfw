@@ -34,4 +34,28 @@ uint8_t* WiFiManager::getMAC(){
   return mac;
 }
 
+void WiFiManager::startWiFiScan() {
+    WiFiClass::mode(WIFI_STA);
+    WiFi.disconnect();
+
+    WiFi.scanNetworks(true, false, false, 300);
+}
+
+int16_t WiFiManager::getScanResult(std::string &resStr) {
+    int16_t r= WiFi.scanComplete();
+
+    if(r>=0) {
+        resStr="";
+        for(uint16_t i=0; i<r; i++){
+            resStr+= WiFi.SSID(i).c_str();
+            resStr+= "@";
+            resStr+= std::to_string(WiFi.RSSI(i));
+
+            if(i!=(r-1))
+                resStr += ";";
+        }
+    }
+
+    return r;
+}
 

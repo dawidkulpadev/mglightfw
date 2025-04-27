@@ -31,6 +31,11 @@ bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed)
   server->setCallbacks(this);
   service = server->createService(BLEUUID(SERVICE_UUID), 30);
 
+    ch_wifiScanRes = service->createCharacteristic(BLE_CHAR_UUID_WIFI_SCAN_RES,
+                                                   BLECharacteristic::PROPERTY_READ |
+                                                   BLECharacteristic::PROPERTY_WRITE |
+                                                   BLECharacteristic::PROPERTY_NOTIFY);
+
   ch_wifiSSID = service->createCharacteristic(CHARACTERISTIC_UUID_WIFI_SSID,
                                          BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_WRITE
@@ -66,8 +71,13 @@ bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed)
                                          BLECharacteristic::PROPERTY_WRITE |
                                          BLECharacteristic::PROPERTY_NOTIFY
                                        );
-  ch_setFlag->addDescriptor(new BLE2902());
-  ch_setFlag->setCallbacks(this);
+
+    // Set descriptor for NOTIFY functionality
+    ch_wifiScanRes->addDescriptor(new BLE2902());
+    ch_wifiScanRes->setCallbacks(this);
+
+    ch_setFlag->addDescriptor(new BLE2902());
+    ch_setFlag->setCallbacks(this);
 
   if(deviceConfig->getSsid()!=nullptr)
     ch_wifiSSID->setValue(std::string(deviceConfig->getSsid()));
@@ -79,6 +89,8 @@ bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed)
     ch_picklock->setValue(std::string(deviceConfig->getPicklock()));
   if(deviceConfig->getTimezone()!=nullptr)
     ch_timezone->setValue(std::string(deviceConfig->getTimezone()));
+
+    ch_wifiScanRes->setValue("");
 
   char str_mac[24];
   sprintf(str_mac, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -130,26 +142,22 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_pa
 void BLEManager::onConnect(BLEServer* s){
   deviceConnected= true;
   Serial.println("BLE device connected");
-
-  heartBeatTicker.attach_ms(1, BLEManager::updateHeartBeatCall, this);
-
 }
 void BLEManager::onDisconnect(BLEServer* s){
   deviceConnected= false;
-  server->getAdvertising()->start();
+  BLEDevice::startAdvertising();
   Serial.println("BLE device disconnected");
-
-  heartBeatTicker.detach();
 }
 
 bool BLEManager::isConnected() const{
   return deviceConnected;
 }
 
-void BLEManager::updateHeartBeatCall(BLEManager *bleManager) {
-    bleManager->updateHeartBeat();
-}
-
-void BLEManager::updateHeartBeat() {
-    hearBeatState++;
+void BLEManager::updateWiFiScanResults(std::string scanRes) {
+    if(deviceConnected) {
+        ch_wifiScanRes->setValue(std::move(scanRes));
+        delay(500);
+        ch_wifiScanRes->notify();
+        Serial.println("WiFi scan result updated");
+    }
 }

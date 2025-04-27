@@ -23,6 +23,7 @@
 #define BLEMANAGER_H
 
 #define SERVICE_UUID                    "952cb13b-57fa-4885-a445-57d1f17328fd"
+#define BLE_CHAR_UUID_WIFI_SCAN_RES     "ef7cb0fc-53a4-4062-bb0e-25443e3a1f5d"
 #define CHARACTERISTIC_UUID_WIFI_SSID   "345ac506-c96e-45c6-a418-56a2ef2d6072"
 #define CHARACTERISTIC_UUID_WIFI_PSK    "b675ddff-679e-458d-9960-939d8bb03572"
 #define CHARACTERISTIC_UUID_UID         "566f9eb0-a95e-4c18-bc45-79bd396389af"
@@ -50,9 +51,8 @@ class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks 
     void onConnect(BLEServer* s) override;
     void onDisconnect(BLEServer* s) override;
     bool isConnected() const;
+    void updateWiFiScanResults(std::string scanRes);
 
-    void updateHeartBeat();
-    static void updateHeartBeatCall(BLEManager *bleManager);
 
   private:
     bool deviceConnected;
@@ -60,6 +60,7 @@ class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks 
     BLEServer *server;
     BLEService *service;
 
+    BLECharacteristic *ch_wifiScanRes;
     BLECharacteristic *ch_wifiSSID;
     BLECharacteristic *ch_wifiPSK;
     BLECharacteristic *ch_uid;
@@ -69,8 +70,6 @@ class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks 
     BLECharacteristic *ch_timezone;
 
     PWMLed *pwmLed;
-    Ticker heartBeatTicker;
-    int hearBeatState;
 };
 
 

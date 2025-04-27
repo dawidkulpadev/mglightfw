@@ -31,10 +31,11 @@ public:
     WiFiManager();
 
     void initNormalMode(const char* ssid, const char* psk);
+    void startWiFiScan();
+    int16_t getScanResult(std::string &resStr);
 
     uint8_t* getMAC();
 private:
-  WebServer *server;
   bool connected;
   uint8_t  mac[6];
 };

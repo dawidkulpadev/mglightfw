@@ -231,13 +231,34 @@ void setup() {
 int lastWifi=-WIFI_RUN_INTERVAL;
 int lastAPI=-(API_RUN_INTERVAL/2);
 
+uint32_t loopTicks=0;
+uint32_t lastLedChange=0;
+uint8_t ledState=0;
+std::string wifis;
 
 void loop() {
     if(mode==MODE_CONFIG){
-        delay(500);
-        digitalWrite(pinout_sys_led, HIGH);
-        delay(500);
-        digitalWrite(pinout_sys_led, LOW);
+        if((lastLedChange+5) <= loopTicks){
+            ledState= !ledState;
+            digitalWrite(pinout_sys_led, ledState);
+
+            lastLedChange= loopTicks;
+        }
+
+        int16_t wifiScanRes= wifiManager.getScanResult(wifis);
+        if(wifiScanRes>=0){
+            Serial.print("Scan result: ");
+            Serial.println(wifis.c_str());
+            bleManager.updateWiFiScanResults(wifis);
+        }
+
+        if(wifiScanRes!=WIFI_SCAN_RUNNING){
+            Serial.println("Starting scan...");
+            wifiManager.startWiFiScan();
+        }
+
+        loopTicks++;
+        delay(100);
     } else {
         delay(200);
 
