@@ -18,10 +18,10 @@
     Please feel free to contact me at any time by email <dawidkulpadev@gmail.com>
 */
 
-#include "BLEManager.h"
+#include "BLEConfigurer.h"
 
 
-bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed){
+bool BLEConfigurer::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed){
   deviceConnected= false;
   BLEDevice::init("MioGiapicco Light");
 
@@ -110,7 +110,7 @@ bool BLEManager::start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed)
   return true;
 }
 
-void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param){
+void BLEConfigurer::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param){
 
   if(pCharacteristic->getUUID().toString() == CHARACTERISTIC_UUID_SET_FLAG){
     std::string wifiSSID= ch_wifiSSID->getValue();
@@ -139,21 +139,21 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_pa
   }
 }
 
-void BLEManager::onConnect(BLEServer* s){
+void BLEConfigurer::onConnect(BLEServer* s){
   deviceConnected= true;
   Serial.println("BLE device connected");
 }
-void BLEManager::onDisconnect(BLEServer* s){
+void BLEConfigurer::onDisconnect(BLEServer* s){
   deviceConnected= false;
   BLEDevice::startAdvertising();
   Serial.println("BLE device disconnected");
 }
 
-bool BLEManager::isConnected() const{
+bool BLEConfigurer::isConnected() const{
   return deviceConnected;
 }
 
-void BLEManager::updateWiFiScanResults(std::string scanRes) {
+void BLEConfigurer::updateWiFiScanResults(std::string scanRes) {
     if(deviceConnected) {
         ch_wifiScanRes->setValue(std::move(scanRes));
         delay(500);

@@ -14,8 +14,17 @@ const String api_url="https://dawidkulpa.pl/apis/miogiapicco/light";
  * Software version: (5-bit) sw epoch, (7-bit) sw epoch version, (4-bit) sw epoch version fix
  */
 
-//#define HW_1_5
-#define HW_1_6
+constexpr uint32_t sw_epoch= 3;
+constexpr uint32_t sw_epoch_version= 1;
+constexpr uint32_t sw_epoch_version_fix= 4;
+constexpr uint32_t sw_version= (sw_epoch << 11) | (sw_epoch_version << 4) | sw_epoch_version_fix;
+
+
+// 0001 1000 0001 0100 sw
+// 0x1814
+
+#define HW_1_5
+//#define HW_1_6
 
 
 #ifdef HW_1_5
@@ -23,11 +32,8 @@ const String api_url="https://dawidkulpa.pl/apis/miogiapicco/light";
 constexpr uint32_t hw_type= 1;
 constexpr uint32_t hw_version= 5;
 constexpr uint32_t hw_id= (hw_type<<10) | hw_version;
-
-constexpr uint32_t sw_epoch= 3;
-constexpr uint32_t sw_epoch_version= 1;
-constexpr uint32_t sw_epoch_version_fix= 1;
-constexpr uint32_t sw_version= (sw_epoch << 11) | (sw_epoch_version << 4) | sw_epoch_version_fix;
+// 0000 0100 0000 0101 hw
+// 0x0405
 
 constexpr uint32_t fw_version= (hw_id << 16) | sw_version;
 
@@ -44,11 +50,8 @@ constexpr uint8_t pinout_fan=          0;
 constexpr uint32_t hw_type= 1;
 constexpr uint32_t hw_version= 6;
 constexpr uint32_t hw_id= (hw_type<<10) | hw_version;
-
-constexpr uint32_t sw_epoch= 3;
-constexpr uint32_t sw_epoch_version= 1;
-constexpr uint32_t sw_epoch_version_fix= 4;
-constexpr uint32_t sw_version= (sw_epoch << 11) | (sw_epoch_version << 4) | sw_epoch_version_fix;
+// 0000 0100 0000 0110 hw
+//0x0406
 
 constexpr uint32_t fw_version= (hw_id << 16) | sw_version;
 

@@ -44,7 +44,7 @@
 #include "DeviceConfig.h"
 #include "PWMLed.h"
 
-class BLEManager : public BLECharacteristicCallbacks, public BLEServerCallbacks {
+class BLEConfigurer : public BLECharacteristicCallbacks, public BLEServerCallbacks {
   public:
     bool start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed);
     void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param) override;

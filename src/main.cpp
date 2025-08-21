@@ -49,7 +49,7 @@
 #include "MGLightAPI.h"
 #include "DeviceConfig.h"
 #include "ConfigManager.h"
-#include "BLEManager.h"
+#include "BLEConfigurer.h"
 #include "WiFiManager.h"
 
 #include "config.h"
@@ -66,7 +66,7 @@ bool timeisset=false;
 int mode;
 
 WiFiManager wifiManager;
-BLEManager bleManager;
+BLEConfigurer bleManager;
 
 PWMLed light(0, pinout_intensity, 200);
 Day day;
