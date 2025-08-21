@@ -5,7 +5,11 @@
 #ifndef MGLIGHTFW_CONF_H
 #define MGLIGHTFW_CONF_H
 
+#define DEVICE_MODE_CONFIG             1
+#define DEVICE_MODE_NORMAL             2
+
 const String api_url="https://dawidkulpa.pl/apis/miogiapicco/light";
+
 
 /**
  * Firmware version number - 32 bit number

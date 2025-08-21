@@ -53,13 +53,15 @@
 #include "WiFiManager.h"
 
 #include "config.h"
+#include "BLELN/BLELNServer.h"
+#include "BLELN/BLELNClient.h"
+#include "Connectivity.h"
 
 #define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
 #define DAY_UPDATE_INTERVAL     1
 
-#define MODE_CONFIG             1
-#define MODE_NORMAL             2
+
 
 bool timeisset=false;
 
@@ -80,32 +82,7 @@ void updateTicker(){
 
 }
 
-bool syncWithNTP(const std::string &tz) {
-    uint16_t reptCnt= 15;
-    configTzTime(tz.c_str(), "pool.ntp.org");
 
-    Serial.print(F("Waiting for NTP time sync: "));
-    time_t nowSecs = time(nullptr);
-    while (nowSecs < 8 * 3600 * 2) {
-        delay(500);
-        Serial.print(F("."));
-        yield();
-        nowSecs = time(nullptr);
-        reptCnt--;
-        if(reptCnt==0){
-            Serial.println("Failed SNTP sync!");
-            return false;
-        }
-    }
-
-    Serial.println();
-    struct tm timeinfo{};
-    getLocalTime(&timeinfo);
-    Serial.print(F("Current time: "));
-    Serial.print(asctime(&timeinfo));
-
-    return true;
-}
 
 int nowTime(){
     struct tm timeinfo{};
@@ -305,4 +282,4 @@ void loop() {
         }
     }
 }
-  
+
