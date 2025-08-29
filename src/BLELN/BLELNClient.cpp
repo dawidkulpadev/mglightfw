@@ -12,7 +12,15 @@ void BLELNClient::start() {
     NimBLEDevice::setMTU(247);
 }
 
-void BLELNClient::startServerSearch(uint32_t durationMs, const std::function<void(int)>& onResult) {
+void BLELNClient::stop() {
+    if(client!= nullptr){
+        client->disconnect();
+        NimBLEDevice::deleteClient(client);
+    }
+    NimBLEDevice::deinit(true);
+}
+
+void BLELNClient::startServerSearch(uint32_t durationMs, const std::function<void(bool)>& onResult) {
     scanning = true;
     onScanResult= onResult;
     auto* scan=NimBLEDevice::getScan();
@@ -41,7 +49,7 @@ void BLELNClient::onResult(const NimBLEAdvertisedDevice *advertisedDevice) {
         client->secureConnection();
         Serial.println("connected");
         if(onScanResult){
-            onScanResult(1);
+            onScanResult(true);
         }
     }
 }
@@ -49,7 +57,7 @@ void BLELNClient::onResult(const NimBLEAdvertisedDevice *advertisedDevice) {
 void BLELNClient::onScanEnd(const NimBLEScanResults &scanResults, int reason) {
     scanning = false;
     if(onScanResult){
-        onScanResult(0);
+        onScanResult(false);
     }
 }
 
@@ -257,4 +265,5 @@ void BLELNClient::onServerResponse(NimBLERemoteCharacteristic *pBLERemoteCharact
 bool BLELNClient::isScanning() const {
     return scanning;
 }
+
 

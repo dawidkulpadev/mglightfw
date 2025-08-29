@@ -3,6 +3,8 @@
 //
 
 #include "BLELNServer.h"
+
+#include <utility>
 #include "BLELNBase.h"
 
 void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
@@ -69,15 +71,15 @@ void BLELNServer::start(Preferences *prefs) {
     BLELNBase::load_or_init_psk(prefs, g_psk_salt, &g_epoch);
     BLELNBase::rng_init();
 
-    NimBLEDevice::init("ESP32C3 Secure ECDH");
+    NimBLEDevice::init("MioGiapicco Light Gen2");
     NimBLEDevice::setMTU(247);
 
     // Security: bonding + MITM + LE Secure Connections
-    NimBLEDevice::setSecurityAuth(true, true, true);
+    NimBLEDevice::setSecurityAuth(false, false, false);
     // Passkey – generuj losowy 6-cyfrowy przy starcie (demo)
     uint32_t pass = 123456;
-    NimBLEDevice::setSecurityPasskey(pass);
-    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
+    //NimBLEDevice::setSecurityPasskey(pass);
+    //NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
 
     srv = NimBLEDevice::createServer();
     srv->setCallbacks(this);
@@ -85,9 +87,9 @@ void BLELNServer::start(Preferences *prefs) {
     auto* svc = srv->createService(BLELNBase::SERVICE_UUID);
 
     chKeyExTx = svc->createCharacteristic(BLELNBase::KEYEX_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
-    chKeyExRx = svc->createCharacteristic(BLELNBase::KEYEX_RX_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
-    chDataTx  = svc->createCharacteristic(BLELNBase::DATA_TX_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ_ENC);
-    chDataRx  = svc->createCharacteristic(BLELNBase::DATA_RX_UUID,  NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+    chKeyExRx = svc->createCharacteristic(BLELNBase::KEYEX_RX_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+    chDataTx  = svc->createCharacteristic(BLELNBase::DATA_TX_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);// | NIMBLE_PROPERTY::READ_ENC);
+    chDataRx  = svc->createCharacteristic(BLELNBase::DATA_RX_UUID,  NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
 
     chKeyExTx->setCallbacks(new KeyExTxClb(this));
     chKeyExRx->setCallbacks(new KeyExRxClb(this));
@@ -96,7 +98,7 @@ void BLELNServer::start(Preferences *prefs) {
     svc->start();
 
     auto* adv = NimBLEDevice::getAdvertising();
-    adv->setName("MioGiapicco Light");
+    adv->setName("MioGiapicco Light Gen2");
     adv->addServiceUUID(BLELNBase::SERVICE_UUID);
     adv->enableScanResponse(true);
 
@@ -149,7 +151,6 @@ void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
     keyex.append(cx->getEncData()->getPublicKeyString());
     keyex.append(cx->getEncData()->getNonceString());
 
-
     if(xSemaphoreTake(keyExTxMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
         chKeyExTx->setValue(keyex);
         chKeyExTx->notify(cx->getHandle());
@@ -179,19 +180,22 @@ void BLELNServer::rxWorker() {
             if(getConnContext(pkt.conn, &cx) and (cx!= nullptr)) {
                 std::string v(reinterpret_cast<char*>(pkt.buf), pkt.len);
 
+                // hexDump("RX", reinterpret_cast<const uint8_t *>(v.data()), v.size());
+
                 std::string plain;
                 if (!cx->getEncData()->decryptAESGCM((const uint8_t *) v.data(), v.size(), plain)) {
                     Serial.printf("[DATA] decrypt fail (conn=%u)\n\r", cx->getHandle());
                     return;
                 }
-                // prosty filtr: ogranicz długość i usuń 0x00
+
                 if (plain.size() > 200) plain.resize(200);
                 for (auto &ch: plain) if (ch == '\0') ch = ' ';
 
-                std::string dat = "[RX]: (" + std::to_string(cx->getHandle()) + ") - " + plain;
-                Serial.println(dat.c_str());
+                // std::string dat = "[RX]: (" + std::to_string(cx->getHandle()) + ") - " + plain;
+                // Serial.println(dat.c_str());
 
-                sendEncrypted(cx, "$HI,Server");
+                if(onMsgReceived)
+                    onMsgReceived(cx, plain);
 
                 free(pkt.buf);
             }
@@ -231,6 +235,7 @@ void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
 }
 
 void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
+    Serial.println("Received keyRX");
     BLELNConnCtx *cx;
     if(!getConnContext(info.getConnHandle(), &cx)){
         return;
@@ -249,15 +254,38 @@ void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) 
         Serial.println("[HX] derive failed"); return;
     }
     cx->setSessionReady(true);
-    //chDataTx->setValue("HANDSHAKRE_OK\n");
-    //chDataTx->notify();
+    sendEncrypted(cx, "$HDSH,OK");
 }
 
 void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
+    Serial.println("Client subscribed for KeyTX");
     BLELNConnCtx *cx;
     if(!getConnContext(connInfo.getConnHandle(), &cx) or (cx== nullptr)) return;
 
     if(cx->isSendKeyNeeded()){
         sendKeyToClient(cx);
     }
+}
+
+bool BLELNServer::sendEncrypted(int i, const std::string &msg) {
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE) return false;
+
+    if(i<connCtxs.size()){
+        sendEncrypted(&connCtxs[i], msg);
+    }
+    xSemaphoreGive(clisMtx);
+
+    return true;
+}
+
+bool BLELNServer::sendEncrypted(const std::string &msg) {
+    for(int i=0; i<connCtxs.size(); i++){
+        if(!sendEncrypted(i, msg)) return false;
+    }
+
+    return true;
+}
+
+void BLELNServer::setOnMessageReceivedCallback(std::function<void(BLELNConnCtx *, const std::string &)> cb) {
+    onMsgReceived= std::move(cb);
 }

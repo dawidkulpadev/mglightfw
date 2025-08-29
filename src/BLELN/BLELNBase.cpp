@@ -4,15 +4,25 @@
 
 #include "BLELNBase.h"
 
-const char* BLELNBase::SERVICE_UUID   = "11111111-1111-1111-1111-111111111111";
-const char* BLELNBase::KEYEX_TX_UUID  = "11111111-1111-1111-1111-111111111112";
-const char* BLELNBase::KEYEX_RX_UUID  = "11111111-1111-1111-1111-111111111113";
-const char* BLELNBase::DATA_TX_UUID   = "11111111-1111-1111-1111-111111111114";
-const char* BLELNBase::DATA_RX_UUID   = "11111111-1111-1111-1111-111111111115";
+const char* BLELNBase::SERVICE_UUID   = "952cb13b-57fa-4885-a445-57d1f17328fd";
+const char* BLELNBase::KEYEX_TX_UUID  = "ef7cb0fc-53a4-4062-bb0e-25443e3a1f5d";
+const char* BLELNBase::KEYEX_RX_UUID  = "345ac506-c96e-45c6-a418-56a2ef2d6072";
+const char* BLELNBase::DATA_TX_UUID   = "b675ddff-679e-458d-9960-939d8bb03572";
+const char* BLELNBase::DATA_RX_UUID   = "566f9eb0-a95e-4c18-bc45-79bd396389af";
 
 bool BLELNBase::rngInitialised=false;
 mbedtls_entropy_context BLELNBase::entropy;
 mbedtls_ctr_drbg_context BLELNBase::ctr_drbg;
+
+void hexDump(const char* label, const uint8_t* data, size_t len) {
+    Serial.printf("%s [%u]: ", label, (unsigned)len);
+    for (size_t i = 0; i < len; ++i) {
+        Serial.printf("%02X", data[i]);
+        if (i + 1 < len) Serial.print(" ");
+        if(i!=0 and i%20==0) Serial.println();
+    }
+    Serial.println();
+}
 
 void BLELNBase::hkdf_sha256(const uint8_t* salt, size_t salt_len,
                         const uint8_t* ikm, size_t ikm_len,

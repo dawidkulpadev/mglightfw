@@ -101,7 +101,7 @@ void MGLightAPI::talkWithServer() {
                 upgrade(*client);
             }
 
-            ConfigManager::writeDay(day);
+            //ConfigManager::writeDay(day);
             success = true;
         } else {
             String payload = https.getString();
@@ -118,9 +118,9 @@ void MGLightAPI::talkWithServer() {
 
   if(!success){
     Serial.println("Server connection failed! Reading last known configuration");
-    if(!ConfigManager::readDay(day)){
+    /*if(!ConfigManager::readDay(day)){
       Serial.println("No Day config file :(");
-    }
+    }*/
   }
 }
 

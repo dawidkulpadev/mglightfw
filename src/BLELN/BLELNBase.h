@@ -15,6 +15,7 @@
 #include <mbedtls/md.h> // HMAC (HKDF implementujemy ręcznie)
 #include "BLELNConnCtx.h"
 
+void hexDump(const char* label, const uint8_t* data, size_t len);
 
 class BLELNBase {
 public:

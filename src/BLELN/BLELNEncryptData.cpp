@@ -133,8 +133,8 @@ bool BLELNEncryptData::decryptAESGCM(const uint8_t* in, size_t inLen, std::strin
     uint8_t aad[ sizeof(aadhdr)-1 + 2 + 4 ];
     uint8_t* a = aad;
     memcpy(a, aadhdr, sizeof(aadhdr)-1); a += sizeof(aadhdr)-1;
-    *a++ = (uint8_t)(sid & 0xFF);
     *a++ = (uint8_t)(sid >> 8);
+    *a++ = (uint8_t)(sid & 0xFF);
     *a++ = (uint8_t)(epoch & 0xFF);
     *a++ = (uint8_t)((epoch >> 8) & 0xFF);
     *a++ = (uint8_t)((epoch >> 16) & 0xFF);
@@ -188,7 +188,7 @@ bool BLELNEncryptData::encryptAESGCM(const std::string &in, std::string &out) {
     *a++ = (uint8_t)(epoch & 0xFF);
     *a++ = (uint8_t)((epoch >> 8) & 0xFF);
     *a++ = (uint8_t)((epoch >> 16) & 0xFF);
-    *a++ = (uint8_t)((epoch >> 24) & 0xFF);
+    *a   = (uint8_t)((epoch >> 24) & 0xFF);
 
     lastCtr_s2c++;
     uint8_t ctrBE[4] = {

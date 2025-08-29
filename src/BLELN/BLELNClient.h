@@ -11,7 +11,8 @@
 class BLELNClient : public NimBLEScanCallbacks, public NimBLEClientCallbacks{
 public:
     void start();
-    void startServerSearch(uint32_t durationMs, const std::function<void(int)>& onResult);
+    void stop();
+    void startServerSearch(uint32_t durationMs, const std::function<void(bool)>& onResult);
     bool sendEncrypted(const std::string& msg, std::function<void(std::string)> onServerResponse);
 
     bool isScanning() const;
@@ -36,7 +37,7 @@ private:
     NimBLERemoteCharacteristic *chKeyExTx=nullptr,*chKeyExRx=nullptr,*chDataTx=nullptr,*chDataRx=nullptr;
 
     bool scanning = false;
-    std::function<void(int)> onScanResult;
+    std::function<void(bool)> onScanResult;
     std::function<void(std::string)> onMsgRx;
 
     volatile bool g_keyexReady = false;

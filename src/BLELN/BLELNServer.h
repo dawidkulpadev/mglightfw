@@ -46,8 +46,14 @@ public:
     void appendToQueue(uint16_t h, const std::string &m);
     void rxWorker();
     bool sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
+    bool sendEncrypted(int i, const std::string& msg);
+    bool sendEncrypted(const std::string& msg);
+
+    void setOnMessageReceivedCallback(std::function<void(BLELNConnCtx* cx, const std::string& msg)> cb);
 
 private:
+    std::function<void(BLELNConnCtx* cx, const std::string& msg)> onMsgReceived;
+
     // NimBLE
     NimBLEServer* srv = nullptr;
     NimBLECharacteristic *chKeyExTx=nullptr, *chKeyExRx=nullptr, *chDataTx=nullptr, *chDataRx=nullptr;

@@ -22,7 +22,7 @@
 #ifndef BLEMANAGER_H
 #define BLEMANAGER_H
 
-#define SERVICE_UUID                    "952cb13b-57fa-4885-a445-57d1f17328fd"
+#define BLE_SERVICE_UUID                    "952cb13b-57fa-4885-a445-57d1f17328fd"
 #define BLE_CHAR_UUID_WIFI_SCAN_RES     "ef7cb0fc-53a4-4062-bb0e-25443e3a1f5d"
 #define CHARACTERISTIC_UUID_WIFI_SSID   "345ac506-c96e-45c6-a418-56a2ef2d6072"
 #define CHARACTERISTIC_UUID_WIFI_PSK    "b675ddff-679e-458d-9960-939d8bb03572"
@@ -32,11 +32,7 @@
 #define CHARACTERISTIC_UUID_SET_FLAG    "e34fc92f-7565-403b-9528-35b4650596fc"
 #define CHARACTERISTIC_UUID_TIMEZONE    "e00758dd-7c07-42fd-8699-423b73fcb4ce"
 
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
-#include "BLECharacteristic.h"
-#include "BLE2902.h"
+#include "NimBLEDevice.h"
 #include "Ticker.h"
 
 #include "Arduino.h"
@@ -44,30 +40,33 @@
 #include "DeviceConfig.h"
 #include "PWMLed.h"
 
-class BLEConfigurer : public BLECharacteristicCallbacks, public BLEServerCallbacks {
+class BLEConfigurer : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks{
   public:
-    bool start(uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed);
-    void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param) override;
-    void onConnect(BLEServer* s) override;
-    void onDisconnect(BLEServer* s) override;
+    bool start(Preferences *preferences, uint8_t *mac, DeviceConfig *deviceConfig, PWMLed *sunLed);
+    void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override;
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override;
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
     bool isConnected() const;
-    void updateWiFiScanResults(std::string scanRes);
+    void updateWiFiScanResults(const std::string &scanRes);
 
+    bool isConfigReceived() const;
+    uint32_t getConfigReceivedAt() const;
 
   private:
+    Preferences *prefs;
     bool deviceConnected;
+    bool configReceived = false;
+    uint32_t configreceivedAt = 0;
+    NimBLEServer* srv = nullptr;
 
-    BLEServer *server;
-    BLEService *service;
-
-    BLECharacteristic *ch_wifiScanRes;
-    BLECharacteristic *ch_wifiSSID;
-    BLECharacteristic *ch_wifiPSK;
-    BLECharacteristic *ch_uid;
-    BLECharacteristic *ch_picklock;
-    BLECharacteristic *ch_mac;
-    BLECharacteristic *ch_setFlag;
-    BLECharacteristic *ch_timezone;
+    NimBLECharacteristic *ch_wifiScanRes;
+    NimBLECharacteristic *ch_wifiSSID;
+    NimBLECharacteristic *ch_wifiPSK;
+    NimBLECharacteristic *ch_uid;
+    NimBLECharacteristic *ch_picklock;
+    NimBLECharacteristic *ch_mac;
+    NimBLECharacteristic *ch_setFlag;
+    NimBLECharacteristic *ch_timezone;
 
     PWMLed *pwmLed;
 };

@@ -36,8 +36,8 @@ public:
 
     uint8_t* getMAC();
 private:
-  bool connected;
-  uint8_t  mac[6];
+  bool connected=false;
+  uint8_t  mac[6]{};
 };
 
 
