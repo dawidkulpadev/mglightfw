@@ -55,7 +55,8 @@ bool ConfigManager::readWifi(Preferences *prefs, DeviceConfig *config) {
 }
 
 bool ConfigManager::writeWifi(Preferences *prefs, DeviceConfig *config) {
-    prefs->putString(CONFIGMANAGER_KEY_SSID, config->getSsid());
+    Serial.println(std::to_string(strlen(config->getSsid())).c_str());
+    Serial.println(std::to_string(prefs->putString(CONFIGMANAGER_KEY_SSID, config->getSsid())).c_str());
     prefs->putString(CONFIGMANAGER_KEY_PSK, config->getPsk());
     prefs->putString(CONFIGMANAGER_KEY_UID, config->getUid());
     prefs->putString(CONFIGMANAGER_KEY_PICKLOCK, config->getPicklock());

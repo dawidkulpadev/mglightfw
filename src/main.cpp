@@ -32,7 +32,7 @@
   TODO:
     * Configure real time with BLE                          []
     * Implement OTA                                         []
-    ** Make linear light gradient                           []
+    * Make auto timezone read                               []
 
   BUGS:
     *
@@ -48,12 +48,9 @@
 #include "MGLightAPI.h"
 #include "DeviceConfig.h"
 #include "ConfigManager.h"
-#include "BLEConfigurer.h"
 #include "WiFiManager.h"
 
 #include "config.h"
-#include "BLELN/BLELNServer.h"
-#include "BLELN/BLELNClient.h"
 #include "Connectivity.h"
 
 #define WIFI_RUN_INTERVAL       120
@@ -61,13 +58,10 @@
 #define DAY_UPDATE_INTERVAL     1
 #define API_TALK_INTERVAL       600
 
-bool timeisset=false;
-
 int deviceMode;
 Preferences prefs;
 Connectivity connectivity;
 WiFiManager wifiManager;
-BLEConfigurer bleManager;
 
 PWMLed light(0, pinout_intensity, 200);
 Day day;
@@ -85,7 +79,6 @@ void updateTicker(){
 }
 
 
-
 int nowDayTime(){
     struct tm timeinfo{};
     if(!getLocalTime(&timeinfo)){
@@ -97,20 +90,6 @@ int nowDayTime(){
 
     return timeinfo.tm_hour*3600 + timeinfo.tm_min*60 + timeinfo.tm_sec;
 }
-
-// TODO: Move to connectivity
-/*void setupConnectivity(int m, DeviceConfig &config){
-    if(m == MODE_NORMAL) {
-        Serial.println("Normal mode");
-        esp_bt_controller_disable();
-        wifiManager.initNormalMode(config.getSsid(), config.getPsk());
-
-        serverAPI = new MGLightAPI(atoi(config.getUid()), config.getPicklock(), &day);
-    } else if(m == MODE_CONFIG){
-        Serial.println("Config mode");
-        bleManager.start(wifiManager.getMAC(), &config, &light);
-    }
-}*/
 
 void printHello(){
     Serial.println("MioGiapicco Light Firmware  Copyright (C) 2023  Dawid Kulpa");
@@ -125,7 +104,7 @@ void printHello(){
 
 void factoryReset(){
     // Signal with led fast blinks
-    for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
+    /*for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
         digitalWrite(pinout_sys_led, LOW);
         delay(FACTORY_RESET_BLINKS_INTERVAL);
         digitalWrite(pinout_sys_led, HIGH);
@@ -134,7 +113,7 @@ void factoryReset(){
 
     // Remove WiFi config file
     ConfigManager::clearWifiConfig(&prefs);
-    esp_restart();
+    esp_restart();*/
 }
 
 int btnPressCnt=0;
@@ -149,6 +128,21 @@ void countButtonPressPeriod(){
     // Factory Reset if button pressed for over 15s (15 passes for 1000ms loop delay)
     if(btnPressCnt>15){
         factoryReset();
+    }
+}
+
+unsigned long lastWaterMarkPrint= 0;
+bool runConnectivity= false;
+void connectivityLoop(){
+    while(runConnectivity){
+        connectivity.loop();
+
+        if(lastWaterMarkPrint+10000 < millis()) {
+            UBaseType_t freeWords = uxTaskGetStackHighWaterMark(nullptr);
+            Serial.printf("Connectivity loop stack free: %u\n\r",
+                          freeWords);
+            lastWaterMarkPrint= millis();
+        }
     }
 }
 
@@ -168,7 +162,7 @@ void setup() {
     printHello();
     delay(5000);
 
-
+    prefs.begin("mgld", false);
 
     bool buttonPressed= false;
 
@@ -178,7 +172,7 @@ void setup() {
             buttonPressed= true;
     }
 
-    if(buttonPressed || !ConfigManager::readWifi(&prefs, &config)){
+    if(buttonPressed or !ConfigManager::readWifi(&prefs, &config)){
         Serial.println("Device: Config mode");
         deviceMode= DEVICE_MODE_CONFIG;
     } else {
@@ -186,8 +180,9 @@ void setup() {
     }
 
     //Setup WiFi
-    //setupConnectivity(mode, config);
-    connectivity.start(deviceMode, &config, &prefs);
+    connectivity.start(deviceMode, &config, &prefs, [](int id, int errc, int httpCode, const std::string &msg){
+
+    });
 
 
     light.start();
@@ -203,6 +198,13 @@ void setup() {
     }
 
     digitalWrite(pinout_sys_led, HIGH);
+
+    runConnectivity= true;
+    xTaskCreatePinnedToCore([](void* arg){
+                                connectivityLoop();
+                                vTaskDelete(nullptr);
+                            },
+                            "conlp", 4096, nullptr, 5, nullptr, 1);
 }
 
 int lastWifi=-WIFI_RUN_INTERVAL;
@@ -211,13 +213,11 @@ int lastAPI=-(API_RUN_INTERVAL/2);
 uint32_t loopTicks=0;
 uint32_t lastLedChange=0;
 uint8_t ledState=0;
-std::string wifis;
 uint32_t lastServerTalk=0;
+
 
 // NEVER BLOCK INSIDE!
 void loop() {
-    connectivity.loop();
-
     if(deviceMode==DEVICE_MODE_CONFIG){
         if((lastLedChange+5) <= loopTicks){
             ledState= !ledState;
@@ -231,7 +231,6 @@ void loop() {
         // Set pwm infill
         int nowsse= static_cast<int>(time(nullptr));    // [seconds] since epoch
         float intensity= day.getSunIntensity(nowDayTime(), light.getIntensity());
-        Serial.printf("Intensity: %f\r\n", intensity);
         light.setIntensity(intensity);
         if(intensity>50.0) {
             digitalWrite(pinout_fan, HIGH);
@@ -243,9 +242,5 @@ void loop() {
             connectivity.startAPITalk();
         }
     }
-
-    // TODO: Move to connectivity
-    /*
-    } */
 }
 

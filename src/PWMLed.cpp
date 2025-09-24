@@ -38,7 +38,6 @@ void PWMLed::start() {
 void PWMLed::setIntensity(float val) {
     intensity = val;
     auto duty = static_cast<uint32_t>((val/100.0) * 16363);
-    Serial.printf("Duty cycle: %d\r\n", duty);
     ledcWrite(this->ch, duty);
 }
 

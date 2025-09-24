@@ -36,7 +36,7 @@ MGLightAPI::MGLightAPI(int uid, const char* picklock, Day *day) {
 }
 
 void MGLightAPI::talkWithServer() {
-  bool success=false;
+  /*bool success=false;
 
   std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
 
@@ -118,10 +118,10 @@ void MGLightAPI::talkWithServer() {
 
   if(!success){
     Serial.println("Server connection failed! Reading last known configuration");
-    /*if(!ConfigManager::readDay(day)){
+    if(!ConfigManager::readDay(day)){
       Serial.println("No Day config file :(");
-    }*/
-  }
+    }
+  }*/
 }
 
 
@@ -137,7 +137,7 @@ int MGLightAPI::getUIntValue(const String &text, const String &key){
 }
 
 MGLightAPI::UpgradeResult MGLightAPI::upgrade(WiFiClientSecure& cli) {
-    String url= api_url+"/upgrade.php";
+    /*String url= api_url+"/upgrade.php";
 
     httpUpdate.rebootOnUpdate(true);
     httpUpdate.onProgress([](int done, int size){
@@ -165,6 +165,6 @@ MGLightAPI::UpgradeResult MGLightAPI::upgrade(WiFiClientSecure& cli) {
             Serial.println("HTTP_UPDATE_OK");
             return UpgradeResult::Ok;
     }
-
+*/
     return UpgradeResult::Failed;
 }

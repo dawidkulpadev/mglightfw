@@ -2,35 +2,55 @@
 // Created by dkulpa on 20.08.2025.
 //
 
+#include <utility>
 #include <vector>
 #include "Connectivity.h"
 #include "esp_heap_caps.h"
 
-void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *preferences) {
+void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *preferences,
+                         std::function<void(int, int, int, const std::string &msg)> onApiResponse) {
     prefs= preferences;
     config= devConfig;
-    dm= devMode;
-    sms= StateMachineStates::Start;
-    wifiSms = WiFiStateMachineStates::None;
+    if(devMode==DEVICE_MODE_CONFIG)
+        conMode= ConnectivityMode::ConfigMode;
+    else
+        conMode= ConnectivityMode::ClientMode;
+    cfmState= ConfigModeState::Start;
+    smState= ServerModeState::Init;
+    cmState= ClientModeState::Init;
+    wifiState = WiFiStateMachineStates::None;
+    WiFi.macAddress(mac);
+    meApiTalkRequested= false;
+    oar= std::move(onApiResponse);
 }
 
 void Connectivity::loop() {
-    if(dm==DEVICE_MODE_CONFIG)
-        loop_config();
-    else
-        loop_normal();
+    switch(conMode){
+        case ConnectivityMode::ClientMode:
+            cli_loop();
+            break;
+        case ConnectivityMode::ServerMode:
+            ser_loop();
+            break;
+        case ConnectivityMode::ConfigMode:
+            conf_loop();
+            break;
+    }
 }
 
-void Connectivity::startAPITalk() {}
+void Connectivity::startAPITalk(const std::string& apiPoint, char method, const std::string& data) {
+    meApiTalkPoint= apiPoint;
+    meApiTalkMethod= method;
+    meApiTalkData= data;
+    meApiTalkRequested= true;
+}
 
-// TODO: Handle comas ','
-
-void Connectivity::loop_config() {
-    if(sms == StateMachineStates::Start){
+void Connectivity::conf_loop() {
+    if(cfmState==ConfigModeState::Start){
         Serial.println("Connectivity (Config): Start");
-        WiFi.macAddress(mac);
-        blelnServer.start(prefs);
-        blelnServer.setOnMessageReceivedCallback([this](BLELNConnCtx* cx, const std::string &msg){
+
+        blelnServer.start(prefs, BLE_NAME, BLELN_CONFIG_UUID);
+        blelnServer.setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
             StringList parts= splitCsvRespectingQuotes(msg);
             if(parts[0]=="$CONFIG"){
                 char resp[256];
@@ -77,20 +97,20 @@ void Connectivity::loop_config() {
                 }
 
                 if(strlen(resp)>0){
-                    blelnServer.sendEncrypted(cx, resp);
+                    blelnServer.sendEncrypted(cliH, resp);
                 }
             } else if(parts[0]=="$REBOOT"){
-                rebootCalledAt= millis();
-                rebootCalled= true;
+                conf_rebootCalledAt= millis();
+                conf_rebootCalled= true;
             }
         });
-        //bleConfig.start(prefs, mac, config, nullptr);
+
         WiFiClass::mode(WIFI_STA);
         WiFi.disconnect();
         WiFi.scanNetworks(true, false, false, 300);
 
-        sms = StateMachineStates::ServerTasking;
-    } else if(sms == StateMachineStates::ServerTasking){
+        cfmState = ConfigModeState::ServerTasking;
+    } else if(cfmState==ConfigModeState::ServerTasking){
         std::string resStr;
         int16_t r= WiFi.scanComplete();
 
@@ -109,93 +129,261 @@ void Connectivity::loop_config() {
             blelnServer.sendEncrypted(("$WIFIL,"+resStr));
         }
 
-        if(rebootCalled){
-            if(rebootCalledAt+2000 < millis()){
-                NimBLEDevice::deinit(true);
+        if(conf_rebootCalled){
+            if(conf_rebootCalledAt + 2000 < millis()){
+                ConfigManager::writeWifi(prefs, this->config);
                 esp_restart();
             }
         }
     }
 }
 
-void Connectivity::loop_normal() {
-    if(sms == StateMachineStates::Start){
-        Serial.println("Connectivity (Normal): Start");
-        sms= StateMachineStates::FirstServerSearch;
-        Serial.println("Connectivity (Normal): Client start and looking for server");
-        blelnClient.start();
-        blelnClient.startServerSearch(5000, [this](bool success){
-            if(success){
-                this->sms = StateMachineStates::ServerConnected;
-            } else {
-                this->sms= StateMachineStates::ServerNotFound;
+/************************ Server mode methods *******************************/
+
+void Connectivity::ser_loop() {
+    if(smState==ServerModeState::Init){
+        runAPITalksWorker= true;
+        xTaskCreatePinnedToCore(
+                [](void* arg){
+                    static_cast<Connectivity*>(arg)->apiTalksWorker();
+                    vTaskDelete(nullptr);
+                },
+                "ATWrkr", 4096, this, 5, nullptr, 1);
+
+        blelnServer.start(prefs, BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
+        blelnServer.setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
+            StringList parts= splitCsvRespectingQuotes(msg);
+            /**
+             * API talk request
+             * $ATRQ,id,api_point,method,data
+             *  * id - request id, passed to response, client defined, not zero!
+             *  * api_point - api function url without server address eg. light/get.php
+             *  * method - P for POST, G for GET
+             *  * data - data string attached to API request
+             */
+            if(parts[0]=="$ATRQ"){
+                uint16_t id= strtol(parts[1].c_str(), nullptr, 10);
+                if(id!=0) {
+                    char method = parts[3].c_str()[0];
+
+                    if (method == 'P' or method == 'G')
+                        this->appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4]);
+                }
             }
         });
-        // On start -   look for server for 5s - if not found become server;
-        //              if found become client
-    } else if(sms == StateMachineStates::FirstServerSearch){
+    } else if(smState==ServerModeState::Idle){
+        APITalkResponse pkt{};
+        if (xQueueReceive(apiTalksResponseQueue, &pkt, 0) == pdTRUE) {
+            if(pkt.h!=UINT16_MAX) {
+                Serial.println("Sending response");
+                char msgBuf[220];
+                sprintf(msgBuf, "$ATRS,%d,%d,%d,\"%s\"", pkt.id, pkt.errc, pkt.respCode, pkt.data);
 
-    } else if(sms == StateMachineStates::ServerConnected){
-        // TODO: Add timeout for BLE connect
-        if(blelnClient.isConnected() and !blelnClient.hasDiscoveredClient()){
-            if(!blelnClient.discover()){
-                Serial.println("Connectivity (Normal): Discover fail!");
-                delay(1000);
-                sms= StateMachineStates::ServerBondingError;
-                return;
+                bool r = blelnServer.sendEncrypted(pkt.h, msgBuf);
+                Serial.print("Send result: ");
+                Serial.println(std::to_string(r).c_str());
+            } else {
+                if(oar)
+                    oar(pkt.id,pkt.errc,pkt.respCode,pkt.data);
             }
-            if(!blelnClient.handshake()){
-                Serial.println("Connectivity (Normal): Handshake fail!");
-                delay(1000);
-                sms= StateMachineStates::ServerBondingError;
-                return;
-            }
-            Serial.println("Connectivity (Normal): Discover and handshake ok");
-            sms = StateMachineStates::ServerTasking;
+            free(pkt.data);
         }
-    } else if(sms == StateMachineStates::ServerNotFound){
-        Serial.println("Connectivity (Normal): Server not found. Becoming server...");
-        // Become server
-        blelnClient.stop();
-        blelnServer.start(prefs);
-        // Init WiFi
+
+        // Forward my own API Talk if requested
+        if(meApiTalkRequested){
+            appendToAPITalksRequestQueue(UINT16_MAX, UINT16_MAX, meApiTalkPoint, meApiTalkMethod, meApiTalkData);
+        }
+
+        if(blelnServer.noClientsConnected() and ser_lastServerSearch + BLELN_SERVER_SEARCH_INTERVAL_MS < millis()){
+            ser_lastServerSearch= millis();
+            blelnServer.startOtherServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](bool found){
+                if(found){
+                    ser_switchToClient();
+                }
+
+                this->ser_lastServerSearch= millis();
+            });
+        }
+    } else if(smState==ServerModeState::OtherBLELNServerFound){
+        ser_switchToClient();
+    }
+}
+
+void Connectivity::ser_finish() {
+    runAPITalksWorker= false;
+    blelnServer.stop();
+}
+
+void Connectivity::ser_switchToClient() {
+    ser_finish();
+    conMode= ConnectivityMode::ClientMode;
+}
+/************************ Server mode methods END *******************************/
+
+
+
+/************************ Client mode methods *******************************/
+void Connectivity::cli_loop() {
+    if(cmState==ClientModeState::Init){
+        blelnClient.start(BLE_NAME, [this](const std::string& msg){
+            this->clientModeOnServerResponse(msg);
+        });
+    } else if(cmState==ClientModeState::Idle){
+        if(meApiTalkRequested){
+            cmState= ClientModeState::ServerSearching;
+            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](const NimBLEAdvertisedDevice* dev){
+                this->cli_onServerSearchResult(dev);
+            });
+        } else if(cli_lastServerCheck + CLIENT_SERVER_CHECK_INTERVAL < millis()){
+            cmState= ClientModeState::ServerChecking;
+            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](const NimBLEAdvertisedDevice* dev){
+                this->cli_onServerSearchResult(dev);
+            });
+        }
+    } else if(cmState==ClientModeState::ServerConnecting) {
+        if(blelnClient.isConnected()) {
+            if (!blelnClient.hasDiscoveredClient()) {
+                if (!blelnClient.discover()) {
+                    Serial.println("discover fail");
+                    cmState = ClientModeState::ServerConnectFailed;
+                } else {
+                    if (!blelnClient.handshake()) {
+                        Serial.println("handshake fail");
+                        cmState = ClientModeState::ServerConnectFailed;
+                    } else {
+                        Serial.println("handshake OK");
+                    }
+                }
+            }
+        }
+    } else if(cmState==ClientModeState::ServerConnected){
+        // TODO: Send API request to server
+        //blelnClient.sendEncrypted();
+        cmState=ClientModeState::WaitingForHTTPResponse;
+    } else if(cmState==ClientModeState::WaitingForHTTPResponse){
+        blelnClient.disconnect();
+        cmState= ClientModeState::Idle;
+        // TODO: If response received, disconnect and go to ClientIdle
+        // TODO: Add timeout
+    } else if(cmState==ClientModeState::ServerConnectFailed){
+        // TODO: Handle BLELN server connect failed - possibly server had max clients
+    } else if(cmState==ClientModeState::ServerNotFound){
+        // Start WiFi check
+        cmState=ClientModeState::WiFiChecking;
         WiFi.begin(config->getSsid(), config->getPsk());
-        sms = StateMachineStates::ServerTasking;
-        wifiSms = WiFiStateMachineStates::Connecting;
-    } else if(sms == StateMachineStates::ServerTasking){
-        if(wifiSms==WiFiStateMachineStates::Connecting){
+        wifi_connectStart= millis();
+        ntpRetriesCnt=0;
+        wifiState = WiFiStateMachineStates::Connecting;
+        wifi_searchStart= millis();
+    } else if(cmState==ClientModeState::WiFiChecking){
+        if(wifiState == WiFiStateMachineStates::Connecting){
             if(WiFi.isConnected()){
                 syncWithNTP(config->getTimezone());
                 Serial.print(F("Connectivity (Normal): Waiting for NTP time sync..."));
-                wifiSms= WiFiStateMachineStates::NTPSyncing;
+                wifiState= WiFiStateMachineStates::NTPSyncing;
+            } else if(wifi_connectStart + WIFI_CONNECT_MAX_DURATION_MS < millis()){
+                wifiState= WiFiStateMachineStates::ConnectFailed;
             }
-        } else if(wifiSms==WiFiStateMachineStates::NTPSyncing){ // Wait for time sync with NTP
+
+            if(wifi_searchStart + WIFI_SEARCH_MAX_DURATION_MS < millis()){
+                wifiState= WiFiStateMachineStates::ConnectFailed;
+            }
+        } else if(wifiState == WiFiStateMachineStates::NTPSyncing){ // Wait for time sync with NTP
             time_t nowSecs = time(nullptr);
             if(nowSecs < (60*60*24*365*30)){ // 60s * 60m * 24h * 365days * 30years
-                if(timeSyncStart+(15*1000) < millis()){ // Wait 15s
-                    // TODO: Make NTP sync retry
+                if(wifi_timeSyncStart + (15 * 1000) < millis()){ // Wait max 15s
                     Serial.println("Connectivity (Normal): Time sync failed! (inf loop)");
-                    wifiSms= WiFiStateMachineStates::NTPSyncFailed;
+                    wifiState= WiFiStateMachineStates::NTPSyncFailed;
                 }
             } else {
                 struct tm timeinfo{};
                 getLocalTime(&timeinfo);
                 Serial.print(F("Connectivity (Normal): Time synced - "));
                 Serial.println(asctime(&timeinfo));
-                wifiSms= WiFiStateMachineStates::Ready;
-            }
-        } else if(wifiSms==WiFiStateMachineStates::Ready){
-            // TODO: Forward my own API Talk if requested
 
-            // TODO: Forward others API Talks if requested
+                wifiState= WiFiStateMachineStates::Ready;
+                cmState= ClientModeState::WiFiConnected;
+            }
+        } else if(wifiState == WiFiStateMachineStates::NTPSyncFailed){
+            if(ntpRetriesCnt<WIFI_NTP_MAX_RETIRES){
+                Serial.println("Connectivity (Normal): Time sync will be retried!");
+                wifiState= WiFiStateMachineStates::Connecting;
+                wifi_connectStart= millis();
+                ntpRetriesCnt++;
+            } else {
+                cmState= ClientModeState::WiFiConnectFailed;
+            }
+        } else if(wifiState == WiFiStateMachineStates::ConnectFailed){
+            Serial.println("Connectivity (Normal): WiFi connect failed!");
+            WiFi.disconnect(true, true);
+            wifi_overallFails++;
+            cmState= ClientModeState::WiFiConnectFailed;
+        }
+    } else if(cmState==ClientModeState::WiFiConnected){
+        cli_switchToServer();
+    } else if(cmState==ClientModeState::WiFiConnectFailed){
+        cmState= ClientModeState::Idle;
+    }
+}
+
+void Connectivity::clientModeOnServerResponse(const std::string &msg) {
+    StringList parts= splitCsvRespectingQuotes(msg);
+    if(parts[0]=="$ATRS" and parts.size()==5){
+        int rid= strtol(parts[1].c_str(), nullptr, 10);
+        int errc= strtol(parts[2].c_str(), nullptr, 10);
+        int httpCode= strtol(parts[3].c_str(), nullptr, 10);
+        if(rid!=0){
+            if(oar)
+                oar(rid, errc, httpCode, parts[4]);
+        }
+    } else if(parts[0]=="$HDSH" and parts.size()==2 and parts[1]=="OK"){
+        if(cmState==ClientModeState::ServerConnecting)
+            cmState= ClientModeState::ServerConnected;
+        else{
+            // TODO: Why HDSH received?? Error?
         }
     }
 }
 
+
+void Connectivity::cli_onServerSearchResult(const NimBLEAdvertisedDevice* dev) {
+    if (dev!= nullptr) {
+        if(cmState==ClientModeState::ServerSearching) {
+            blelnClient.beginConnect(dev, [](bool success, int errc) {
+                if (!success) {
+                    if (errc == BLE_REASON_MAX_CLIENTS) {
+                        // TODO: If failed due to max clients connected - retry
+                    }
+                    Serial.print("Failed connecting, reason: ");
+                    Serial.println(errc);
+                }
+            });
+            cmState = ClientModeState::ServerConnecting;
+        } else if(cmState==ClientModeState::ServerChecking){
+            cmState= ClientModeState::Idle;
+        }
+    } else {
+        cmState = ClientModeState::ServerNotFound;
+    }
+}
+
+void Connectivity::cli_finish() {
+    blelnClient.stop();
+    apiTalksRequestQueue= xQueueCreate(20, sizeof(APITalkRequest));
+    apiTalksResponseQueue= xQueueCreate(20, sizeof(APITalkResponse));
+    cmState= ClientModeState::Init;
+}
+
+void Connectivity::cli_switchToServer() {
+    cli_finish();
+    conMode= ConnectivityMode::ServerMode;
+}
+/************************ Client mode methods END *******************************/
+
+
 bool Connectivity::syncWithNTP(const std::string &tz) {
-    uint16_t reptCnt= 15;
     configTzTime(tz.c_str(), "pool.ntp.org");
-    timeSyncStart= millis();
+    wifi_timeSyncStart= millis();
 
     return true;
 }
@@ -203,3 +391,116 @@ bool Connectivity::syncWithNTP(const std::string &tz) {
 uint8_t *Connectivity::getMAC() {
     return mac;
 }
+
+void Connectivity::appendToAPITalksResponseQueue(uint16_t h, uint16_t id, uint8_t errc, uint16_t respCode, const String& data) {
+    auto* dataHeapBuf= (char*)malloc(data.length()+1);
+    if (!dataHeapBuf) return;
+
+    strcpy(dataHeapBuf, data.c_str());
+
+    APITalkResponse pkt{h, id, errc, respCode, dataHeapBuf};
+    if (xQueueSend(apiTalksResponseQueue, &pkt, 0) != pdPASS) {
+        free(dataHeapBuf);
+    } else {
+        Serial.println("Pushed response");
+    }
+}
+
+void
+Connectivity::appendToAPITalksRequestQueue(uint16_t h, uint16_t id, const std::string &apiPoint, char method, const std::string &data) {
+    auto* apiPointHeapBuf = (char*)malloc(apiPoint.size()+1);
+    auto* dataHeapBuf= (char*)malloc(data.size()+1);
+    if (!apiPointHeapBuf and !dataHeapBuf) return;
+    strcpy(apiPointHeapBuf, apiPoint.c_str());
+    strcpy(dataHeapBuf, data.c_str());
+
+    APITalkRequest pkt{h, id, method, apiPointHeapBuf, dataHeapBuf};
+    if (xQueueSend(apiTalksRequestQueue, &pkt, 0) != pdPASS) {
+        free(apiPointHeapBuf);
+        free(dataHeapBuf);
+    }
+}
+
+void Connectivity::apiTalksWorker() {
+    // TODO: Handle updates
+
+    while(runAPITalksWorker){
+        APITalkRequest pkt{};
+        if (xQueueReceive(apiTalksRequestQueue, &pkt, pdMS_TO_TICKS(10)) == pdTRUE) {
+            Serial.println("New request received");
+            std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
+            client->setCACertBundle(rootca_crt_bundle_start);
+
+            HTTPClient https;
+
+            // Create request
+            unsigned int httpReqLen = api_url.size() + strlen(pkt.apiPoint);
+            if (pkt.method == 'G')
+                httpReqLen += strlen(pkt.data);
+
+            std::string httpReq;
+            httpReq.reserve(httpReqLen + 20);
+            httpReq.append(api_url).append(pkt.apiPoint);
+            if (pkt.method == 'G') {
+                httpReq.push_back('?');
+                httpReq.append(pkt.data);
+            }
+
+            Serial.println(httpReq.c_str());
+            Serial.println(pkt.data);
+
+            if (https.begin(*client, httpReq.c_str())) {  // HTTPS
+                int httpCode = 0;
+                if (pkt.method == 'P') {
+                    https.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                    httpCode = https.POST(pkt.data);
+                } else if (pkt.method == 'G') {
+                    httpCode = https.GET();
+                }
+
+                // httpCode will be negative on error
+                if (httpCode > 0) {
+                    // HTTP header has been send and Server response header has been handled
+                    appendToAPITalksResponseQueue(pkt.h, pkt.id, 0, httpCode, https.getString());
+                } else {
+                    appendToAPITalksResponseQueue(pkt.h, pkt.id, 3, 0, "");
+                    Serial.printf("[HTTPS] POST... failed, error: %s\n", HTTPClient::errorToString(httpCode).c_str());
+                }
+
+                https.end();
+            } else {
+                appendToAPITalksResponseQueue(pkt.h, pkt.id, 2, 0, "");
+                Serial.println("Error https begin");
+            }
+
+            free(pkt.apiPoint);
+            free(pkt.data);
+        }
+
+        if(uxQueueMessagesWaiting(apiTalksRequestQueue)>0){
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        if(lastWaterMarkPrint+10000 < millis()) {
+            UBaseType_t freeWords = uxTaskGetStackHighWaterMark(nullptr);
+            Serial.printf("Connectivity API talks stack free: %u\n\r",
+                          freeWords);
+            lastWaterMarkPrint= millis();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
