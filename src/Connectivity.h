@@ -19,12 +19,11 @@
 #define CONNECTIVITY_ROLE_CLIENT    1
 #define CONNECTIVITY_ROLE_SERVER    2
 
-#define WIFI_CONNECT_MAX_DURATION_MS        15000       // 15s
-#define WIFI_SEARCH_MAX_DURATION_MS         20000       // 20s
+#define WIFI_CONNECT_MAX_DURATION_MS        (15*1000)       // 15s
 #define WIFI_NTP_MAX_RETIRES                1
 #define BLELN_SERVER_SEARCH_INTERVAL_MS     (5*60000)   // 5 min
 #define BLE_REASON_MAX_CLIENTS              1 // TODO: Replace with real value
-#define CLIENT_SERVER_CHECK_INTERVAL        10000       // 10s
+#define CLIENT_SERVER_CHECK_INTERVAL        ((10+20+5)*1000)       // 10s + 20s
 
 /**
  * Workflow:
@@ -78,7 +77,6 @@ public:
     void startAPITalk(const std::string& apiPoint, char method, const std::string& data); // Talk with API about me
 
     void apiTalksWorker();
-
     uint8_t* getMAC();
 private:
     // BLELN tools
@@ -105,7 +103,6 @@ private:
     WiFiStateMachineStates wifiState;
     unsigned long wifi_timeSyncStart;
     unsigned long wifi_connectStart;                     // WiFi search and connecting started at
-    unsigned long wifi_searchStart= ULONG_MAX - 10000;
     uint8_t wifi_overallFails=0;                         // Count every WiFi connect fail TODO: Reset every day
     uint8_t ntpRetriesCnt=0;
 
@@ -119,12 +116,13 @@ private:
     void ser_loop();
     void ser_finish();
     void ser_switchToClient();
+    void ser_onMessageReceived(uint16_t cliH, const std::string &msg);
     // Server mode variables
     unsigned long ser_lastServerSearch= 0;
 
     // Client mode methods
     void cli_loop();
-    void clientModeOnServerResponse(const std::string &msg);
+    void cli_onServerResponse(const std::string &msg);
     void cli_onServerSearchResult(const NimBLEAdvertisedDevice* dev);
     void cli_finish();
     void cli_switchToServer();
@@ -141,6 +139,7 @@ private:
     QueueHandle_t apiTalksResponseQueue;
 
     // My API Talk variables
+    SemaphoreHandle_t meApiTalkMutex;
     bool meApiTalkRequested= false;
     std::string meApiTalkData;
     std::string meApiTalkPoint;

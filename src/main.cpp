@@ -56,7 +56,7 @@
 #define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
 #define DAY_UPDATE_INTERVAL     1
-#define API_TALK_INTERVAL       600
+#define API_TALK_INTERVAL       60
 
 int deviceMode;
 Preferences prefs;
@@ -163,6 +163,9 @@ void setup() {
     delay(5000);
 
     prefs.begin("mgld", false);
+    esp_log_level_set("wifi", ESP_LOG_VERBOSE);
+    esp_log_level_set("dhcpc", ESP_LOG_VERBOSE);   // klient DHCP
+    esp_log_level_set("wifi_init", ESP_LOG_VERBOSE);
 
     bool buttonPressed= false;
 
@@ -229,7 +232,7 @@ void loop() {
         delay(10);
     } else {
         // Set pwm infill
-        int nowsse= static_cast<int>(time(nullptr));    // [seconds] since epoch
+        uint32_t nowsse= static_cast<uint32_t>(time(nullptr));    // [seconds] since epoch
         float intensity= day.getSunIntensity(nowDayTime(), light.getIntensity());
         light.setIntensity(intensity);
         if(intensity>50.0) {
@@ -239,7 +242,15 @@ void loop() {
         }
 
         if(lastServerTalk+API_TALK_INTERVAL < nowsse){
-            connectivity.startAPITalk();
+            Serial.println("main - Request API Talk");
+            float t= InternalTempSensor_read();
+            uint8_t mac[6];
+            WiFi.macAddress(mac);
+            char buf[256];
+            sprintf(buf, "id=%02X%02X%02X%02X%02X%02X&uid=%s&picklock=%s&fv=%d&t=%d", mac[0], mac[1], mac[2], mac[3],
+                    mac[4], mac[5], config.getUid(), config.getPicklock(), fw_version, (int)t);
+            connectivity.startAPITalk("light/get.php", 'P', buf);
+            lastServerTalk= nowsse;
         }
     }
 }

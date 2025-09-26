@@ -21,6 +21,7 @@ void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *
     wifiState = WiFiStateMachineStates::None;
     WiFi.macAddress(mac);
     meApiTalkRequested= false;
+    meApiTalkMutex= xSemaphoreCreateMutex();
     oar= std::move(onApiResponse);
 }
 
@@ -36,13 +37,17 @@ void Connectivity::loop() {
             conf_loop();
             break;
     }
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void Connectivity::startAPITalk(const std::string& apiPoint, char method, const std::string& data) {
-    meApiTalkPoint= apiPoint;
-    meApiTalkMethod= method;
-    meApiTalkData= data;
-    meApiTalkRequested= true;
+    if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(100)==pdTRUE)) {
+        meApiTalkPoint = apiPoint;
+        meApiTalkMethod = method;
+        meApiTalkData = data;
+        meApiTalkRequested = true;
+        xSemaphoreGive(meApiTalkMutex);
+    }
 }
 
 void Connectivity::conf_loop() {
@@ -142,6 +147,7 @@ void Connectivity::conf_loop() {
 
 void Connectivity::ser_loop() {
     if(smState==ServerModeState::Init){
+        Serial.println("Server mode - Init");
         runAPITalksWorker= true;
         xTaskCreatePinnedToCore(
                 [](void* arg){
@@ -152,25 +158,9 @@ void Connectivity::ser_loop() {
 
         blelnServer.start(prefs, BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
         blelnServer.setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
-            StringList parts= splitCsvRespectingQuotes(msg);
-            /**
-             * API talk request
-             * $ATRQ,id,api_point,method,data
-             *  * id - request id, passed to response, client defined, not zero!
-             *  * api_point - api function url without server address eg. light/get.php
-             *  * method - P for POST, G for GET
-             *  * data - data string attached to API request
-             */
-            if(parts[0]=="$ATRQ"){
-                uint16_t id= strtol(parts[1].c_str(), nullptr, 10);
-                if(id!=0) {
-                    char method = parts[3].c_str()[0];
-
-                    if (method == 'P' or method == 'G')
-                        this->appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4]);
-                }
-            }
+            this->ser_onMessageReceived(cliH, msg);
         });
+        smState= ServerModeState::Idle;
     } else if(smState==ServerModeState::Idle){
         APITalkResponse pkt{};
         if (xQueueReceive(apiTalksResponseQueue, &pkt, 0) == pdTRUE) {
@@ -190,22 +180,46 @@ void Connectivity::ser_loop() {
         }
 
         // Forward my own API Talk if requested
-        if(meApiTalkRequested){
-            appendToAPITalksRequestQueue(UINT16_MAX, UINT16_MAX, meApiTalkPoint, meApiTalkMethod, meApiTalkData);
+        if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(5)==pdTRUE)) {
+            if (meApiTalkRequested) {
+                Serial.println("Server mode - API Talk requested");
+                appendToAPITalksRequestQueue(UINT16_MAX, UINT16_MAX, meApiTalkPoint, meApiTalkMethod, meApiTalkData);
+                meApiTalkRequested = false;
+            }
+            xSemaphoreGive(meApiTalkMutex);
         }
 
         if(blelnServer.noClientsConnected() and ser_lastServerSearch + BLELN_SERVER_SEARCH_INTERVAL_MS < millis()){
             ser_lastServerSearch= millis();
             blelnServer.startOtherServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](bool found){
                 if(found){
-                    ser_switchToClient();
+                    Serial.println("Server mode - Switching to client mode (cleanup)...");
+                    this->smState=ServerModeState::OtherBLELNServerFound;
                 }
 
                 this->ser_lastServerSearch= millis();
             });
         }
     } else if(smState==ServerModeState::OtherBLELNServerFound){
-        ser_switchToClient();
+        APITalkResponse pkt{};
+        if (xQueueReceive(apiTalksResponseQueue, &pkt, 0) == pdTRUE) {
+            if(pkt.h!=UINT16_MAX) {
+                Serial.println("Sending response");
+                char msgBuf[220];
+                sprintf(msgBuf, "$ATRS,%d,%d,%d,\"%s\"", pkt.id, pkt.errc, pkt.respCode, pkt.data);
+
+                bool r = blelnServer.sendEncrypted(pkt.h, msgBuf);
+                Serial.print("Send result: ");
+                Serial.println(std::to_string(r).c_str());
+            } else {
+                if(oar)
+                    oar(pkt.id,pkt.errc,pkt.respCode,pkt.data);
+            }
+            free(pkt.data);
+        }
+
+        if(uxQueueMessagesWaiting(apiTalksResponseQueue)==0 and uxQueueMessagesWaiting(apiTalksRequestQueue))
+            ser_switchToClient();
     }
 }
 
@@ -215,9 +229,35 @@ void Connectivity::ser_finish() {
 }
 
 void Connectivity::ser_switchToClient() {
+    Serial.println("Server mode - switch to client mode");
     ser_finish();
+    smState= ServerModeState::Init;
     conMode= ConnectivityMode::ClientMode;
 }
+
+
+void Connectivity::ser_onMessageReceived(uint16_t cliH, const std::string &msg) {
+    StringList parts= splitCsvRespectingQuotes(msg);
+    /**
+     * API talk request
+     * $ATRQ,id,api_point,method,data
+     *  * id - request id, passed to response, client defined, not zero!
+     *  * api_point - api function url without server address eg. light/get.php
+     *  * method - P for POST, G for GET
+     *  * data - data string attached to API request
+     */
+    if(parts[0]=="$ATRQ"){
+        uint16_t id= strtol(parts[1].c_str(), nullptr, 10);
+        if(id!=0) {
+            char method = parts[3].c_str()[0];
+
+            if (method == 'P' or method == 'G')
+                appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4]);
+        }
+    }
+}
+
+
 /************************ Server mode methods END *******************************/
 
 
@@ -225,20 +265,28 @@ void Connectivity::ser_switchToClient() {
 /************************ Client mode methods *******************************/
 void Connectivity::cli_loop() {
     if(cmState==ClientModeState::Init){
+        Serial.println("Client mode - Init");
         blelnClient.start(BLE_NAME, [this](const std::string& msg){
-            this->clientModeOnServerResponse(msg);
+            this->cli_onServerResponse(msg);
         });
+        cmState = ClientModeState::Idle;
     } else if(cmState==ClientModeState::Idle){
-        if(meApiTalkRequested){
-            cmState= ClientModeState::ServerSearching;
-            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](const NimBLEAdvertisedDevice* dev){
-                this->cli_onServerSearchResult(dev);
-            });
+        if((xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(5)==pdTRUE)) and meApiTalkRequested){
+            Serial.println("Client mode - Start API Talk");
+            cmState = ClientModeState::ServerSearching;
+            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID,
+                                          [this](const NimBLEAdvertisedDevice *dev) {
+                                              this->cli_onServerSearchResult(dev);
+                                          });
+            meApiTalkRequested= false;
+            xSemaphoreGive(meApiTalkMutex);
         } else if(cli_lastServerCheck + CLIENT_SERVER_CHECK_INTERVAL < millis()){
+            Serial.println("Client mode - Start server check");
             cmState= ClientModeState::ServerChecking;
             blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](const NimBLEAdvertisedDevice* dev){
                 this->cli_onServerSearchResult(dev);
             });
+            cli_lastServerCheck = millis();
         }
     } else if(cmState==ClientModeState::ServerConnecting) {
         if(blelnClient.isConnected()) {
@@ -269,23 +317,26 @@ void Connectivity::cli_loop() {
         // TODO: Handle BLELN server connect failed - possibly server had max clients
     } else if(cmState==ClientModeState::ServerNotFound){
         // Start WiFi check
+        Serial.println("Client mode - No server, checking WiFi...");
         cmState=ClientModeState::WiFiChecking;
-        WiFi.begin(config->getSsid(), config->getPsk());
+
+        // Release
+        // WiFi.begin(config->getSsid(), config->getPsk());
+        // Debug
+        WiFiClass::mode(WIFI_STA);
+        wl_status_t ret = WiFi.begin("dlink3", "sikakama2");
+        Serial.printf("[APP] WiFi.begin() returned %d\n", ret);
         wifi_connectStart= millis();
         ntpRetriesCnt=0;
         wifiState = WiFiStateMachineStates::Connecting;
-        wifi_searchStart= millis();
     } else if(cmState==ClientModeState::WiFiChecking){
         if(wifiState == WiFiStateMachineStates::Connecting){
             if(WiFi.isConnected()){
                 syncWithNTP(config->getTimezone());
-                Serial.print(F("Connectivity (Normal): Waiting for NTP time sync..."));
+                Serial.println("Connectivity (Normal): Waiting for NTP time sync...");
                 wifiState= WiFiStateMachineStates::NTPSyncing;
             } else if(wifi_connectStart + WIFI_CONNECT_MAX_DURATION_MS < millis()){
-                wifiState= WiFiStateMachineStates::ConnectFailed;
-            }
-
-            if(wifi_searchStart + WIFI_SEARCH_MAX_DURATION_MS < millis()){
+                Serial.println("Connectivity (Client): WiFi connectiong timeout");
                 wifiState= WiFiStateMachineStates::ConnectFailed;
             }
         } else if(wifiState == WiFiStateMachineStates::NTPSyncing){ // Wait for time sync with NTP
@@ -315,7 +366,9 @@ void Connectivity::cli_loop() {
             }
         } else if(wifiState == WiFiStateMachineStates::ConnectFailed){
             Serial.println("Connectivity (Normal): WiFi connect failed!");
-            WiFi.disconnect(true, true);
+            WiFi.scanDelete();
+            WiFi.persistent(false);
+            WiFi.disconnect(false, false);
             wifi_overallFails++;
             cmState= ClientModeState::WiFiConnectFailed;
         }
@@ -326,7 +379,7 @@ void Connectivity::cli_loop() {
     }
 }
 
-void Connectivity::clientModeOnServerResponse(const std::string &msg) {
+void Connectivity::cli_onServerResponse(const std::string &msg) {
     StringList parts= splitCsvRespectingQuotes(msg);
     if(parts[0]=="$ATRS" and parts.size()==5){
         int rid= strtol(parts[1].c_str(), nullptr, 10);
@@ -349,8 +402,11 @@ void Connectivity::clientModeOnServerResponse(const std::string &msg) {
 void Connectivity::cli_onServerSearchResult(const NimBLEAdvertisedDevice* dev) {
     if (dev!= nullptr) {
         if(cmState==ClientModeState::ServerSearching) {
+            Serial.println("Client mode - BLELN server found. Connecting...");
             blelnClient.beginConnect(dev, [](bool success, int errc) {
                 if (!success) {
+                    Serial.print("BLELN server connect error: ");
+                    Serial.println(errc);
                     if (errc == BLE_REASON_MAX_CLIENTS) {
                         // TODO: If failed due to max clients connected - retry
                     }
@@ -360,9 +416,11 @@ void Connectivity::cli_onServerSearchResult(const NimBLEAdvertisedDevice* dev) {
             });
             cmState = ClientModeState::ServerConnecting;
         } else if(cmState==ClientModeState::ServerChecking){
+            Serial.println("Client mode - BLELN server found. Continuing as client");
             cmState= ClientModeState::Idle;
         }
     } else {
+        Serial.println("Client mode - BLELN server not found");
         cmState = ClientModeState::ServerNotFound;
     }
 }
@@ -491,7 +549,6 @@ void Connectivity::apiTalksWorker() {
         }
     }
 }
-
 
 
 
