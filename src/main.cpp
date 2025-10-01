@@ -42,16 +42,17 @@
 #include <Arduino.h>
 
 #include <ctime>
+#include <Ticker.h>
 
 #include "PWMLed.h"
 #include "Day.h"
-#include "MGLightAPI.h"
 #include "DeviceConfig.h"
 #include "ConfigManager.h"
 #include "WiFiManager.h"
+#include "InternalTempSensor.h"
 
 #include "config.h"
-#include "Connectivity.h"
+#include "Connectivity/Connectivity.h"
 
 #define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
@@ -65,7 +66,6 @@ WiFiManager wifiManager;
 
 PWMLed light(0, pinout_intensity, 200);
 Day day;
-MGLightAPI *serverAPI;
 std::string timezone;
 
 //Read wifi configuration
@@ -146,6 +146,23 @@ void connectivityLoop(){
     }
 }
 
+int getUIntValue(const std::string &text, const std::string &key){
+    size_t kpos= text.find(key);
+    unsigned int klen= key.length();
+
+    if(kpos != std::string::npos){
+        try {
+            return std::stoi(text.substr(kpos + klen));
+        } catch (std::invalid_argument &e){
+            return -2;
+        } catch (std::out_of_range &e) {
+            return -3;
+        }
+    } else {
+        return -1;
+    }
+}
+
 void setup() {
     deviceMode= DEVICE_MODE_NORMAL;
 
@@ -163,9 +180,6 @@ void setup() {
     delay(5000);
 
     prefs.begin("mgld", false);
-    esp_log_level_set("wifi", ESP_LOG_VERBOSE);
-    esp_log_level_set("dhcpc", ESP_LOG_VERBOSE);   // klient DHCP
-    esp_log_level_set("wifi_init", ESP_LOG_VERBOSE);
 
     bool buttonPressed= false;
 
@@ -184,7 +198,40 @@ void setup() {
 
     //Setup WiFi
     connectivity.start(deviceMode, &config, &prefs, [](int id, int errc, int httpCode, const std::string &msg){
+        if(errc==0 and httpCode==200) {
+            int val;
 
+            //Read DLI value
+            val = getUIntValue(msg, "\"DLI\":");
+            if (val >= 0)
+                day.setDli(val);
+
+            //Read DS value
+            val = getUIntValue(msg, "\"DS\":");
+            if (val >= 0)
+                day.setDs(val);
+
+            //Read DE value
+            val = getUIntValue(msg, "\"DE\":");
+            if (val >= 0)
+                day.setDe(val);
+
+            //Read SSD value
+            val = getUIntValue(msg, "\"SSD\":");
+            if (val >= 0)
+                day.setSsd(val);
+
+            //Read SRD value
+            val = getUIntValue(msg, "\"SRD\":");
+            if (val >= 0)
+                day.setSrd(val);
+
+            Serial.println("main - Day configuration received");
+            Serial.printf("main - DS: %d, DE: %d, SSD: %d, SRD: %d, DLI: %d\r\n", day.getDs(), day.getDe(),
+                          day.getSsd(), day.getSrd(), day.getDli());
+        } else {
+            Serial.println("main - API Talk failed");
+        }
     });
 
 
@@ -209,8 +256,6 @@ void setup() {
                             },
                             "conlp", 4096, nullptr, 5, nullptr, 1);
 }
-
-int lastWifi=-WIFI_RUN_INTERVAL;
 int lastAPI=-(API_RUN_INTERVAL/2);
 
 uint32_t loopTicks=0;
@@ -232,7 +277,7 @@ void loop() {
         delay(10);
     } else {
         // Set pwm infill
-        uint32_t nowsse= static_cast<uint32_t>(time(nullptr));    // [seconds] since epoch
+        auto nowsse= static_cast<uint32_t>(time(nullptr));    // [seconds] since epoch
         float intensity= day.getSunIntensity(nowDayTime(), light.getIntensity());
         light.setIntensity(intensity);
         if(intensity>50.0) {
@@ -246,7 +291,7 @@ void loop() {
             float t= InternalTempSensor_read();
             uint8_t mac[6];
             WiFi.macAddress(mac);
-            char buf[256];
+            char buf[100];
             sprintf(buf, "id=%02X%02X%02X%02X%02X%02X&uid=%s&picklock=%s&fv=%d&t=%d", mac[0], mac[1], mac[2], mac[3],
                     mac[4], mac[5], config.getUid(), config.getPicklock(), fw_version, (int)t);
             connectivity.startAPITalk("light/get.php", 'P', buf);
