@@ -6,54 +6,20 @@
 #include "Encryption.h"
 
 bool BLELNSessionEnc::makeMyKeys() {
-    mbedtls_ecp_point Q{};
+    if(!Encryption::ecdh_gen(myPub,grp,d)){
+        Serial.println("[HX] ecdh_gen fail");
+        return false;
+    }
+    Encryption::random_bytes(myNonce,12);
 
-    mbedtls_ecp_group_init(&grp);
-    mbedtls_mpi_init(&d);
-    mbedtls_ecp_point_init(&Q);
-    int rc = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
-    if (rc != 0) return false;
-    rc = mbedtls_ecp_gen_keypair(&grp, &d, &Q,
-                                 mbedtls_ctr_drbg_random, Encryption::getEntropy());
-    if (rc != 0) return false;
-    size_t olen = 0;
-
-    rc = mbedtls_ecp_point_write_binary(&grp, &Q,
-                                        MBEDTLS_ECP_PF_UNCOMPRESSED,
-                                        &olen, myPub, 65);
-    if (rc != 0 || olen != 65 || myPub[0] != 0x04) return false;
-    Encryption::random_bytes(myNonce, sizeof(myNonce));
     return true;
 }
 
-
 bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
                                     const uint8_t *clientNonce12, uint8_t *g_psk_salt, uint32_t g_epoch) {
-    // wczytaj punkt klienta
-    mbedtls_ecp_point Pcli;
-    mbedtls_ecp_point_init(&Pcli);
-    int rc = mbedtls_ecp_point_read_binary(&grp, &Pcli, clientPub65, 65);
-    if (rc != 0) {
-        mbedtls_ecp_point_free(&Pcli);
-        return false;
-    }
-
-    // shared = ECDH(d_serwera, P_klienta)
-    mbedtls_mpi shared;
-    mbedtls_mpi_init(&shared);
-
-    rc = mbedtls_ecdh_compute_shared(&grp, &shared, &Pcli, &d,
-                                     mbedtls_ctr_drbg_random, Encryption::getEntropy());
-    mbedtls_ecp_point_free(&Pcli);
-    if (rc != 0) {
-        mbedtls_mpi_free(&shared);
-        return false;
-    }
-
-    uint8_t ss[32]; // P-256 -> 32 bajty
-    rc = mbedtls_mpi_write_binary(&shared, ss, sizeof(ss));
-    mbedtls_mpi_free(&shared);
-    if (rc != 0){
+    // ECDH -> shared
+    uint8_t ss[32];
+    if(!Encryption::ecdh_shared(grp,d,myPub,ss)){
         return false;
     }
 
@@ -107,13 +73,13 @@ bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
     return true;
 }
 
-bool BLELNSessionEnc::decryptAESGCM(const uint8_t *in, size_t inLen, std::string &out) {
+bool BLELNSessionEnc::decryptMessage(const uint8_t *in, size_t inLen, std::string &out) {
     if (inLen < 4 + 12 + 16) {
         return false;
     }
 
     const uint8_t* p = in;
-    uint32_t ctr = (p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3];
+    uint32_t r_ctr = (p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3]; // Received CTR
     p += 4;
     const uint8_t* iv = p;
     p += 12;
@@ -122,7 +88,7 @@ bool BLELNSessionEnc::decryptAESGCM(const uint8_t *in, size_t inLen, std::string
     p += ctLen;
     const uint8_t* tag = p;
 
-    if (ctr <= friendsLastCtr){
+    if (r_ctr <= friendsLastCtr){
         return false;
     }
 
@@ -138,29 +104,15 @@ bool BLELNSessionEnc::decryptAESGCM(const uint8_t *in, size_t inLen, std::string
     *a++ = (uint8_t)((epoch >> 16) & 0xFF);
     *a = (uint8_t)((epoch >> 24) & 0xFF);
 
-
-    mbedtls_gcm_context gcm; mbedtls_gcm_init(&gcm);
-    if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, sessKey_f2m, 256) != 0) {
-        mbedtls_gcm_free(&gcm);
+    if(!Encryption::decryptAESGCM(ct, ctLen, iv, tag, aad, &out, sessKey_f2m)){
         return false;
     }
 
-    out.resize(ctLen);
-    int rc = mbedtls_gcm_auth_decrypt(&gcm, ctLen,
-                                      iv, 12,
-                                      aad, sizeof(aad),
-                                      tag, 16,
-                                      ct, (unsigned char*)out.data());
-    mbedtls_gcm_free(&gcm);
-    if (rc != 0) {
-        return false;
-    }
-
-    friendsLastCtr=ctr;
+    friendsLastCtr = r_ctr;
     return true;
 }
 
-bool BLELNSessionEnc::encryptAESGCM(const std::string &in, std::string &out) {
+bool BLELNSessionEnc::encryptMessage(const std::string &in, std::string &out) {
     // AAD = "DATAv1" | sid(BE) | epoch(LE)
     const char aadhdr[] = "DATAv1";
     uint8_t aad[sizeof(aadhdr)-1 + 2 + 4], *a=aad;
@@ -176,27 +128,18 @@ bool BLELNSessionEnc::encryptAESGCM(const std::string &in, std::string &out) {
     myLastCtr++;
     uint8_t ctrBE[4] = {
             (uint8_t)((myLastCtr>>24)&0xFF), (uint8_t)((myLastCtr>>16)&0xFF),
-            (uint8_t)((myLastCtr>>8)&0xFF),  (uint8_t)( myLastCtr     &0xFF)
+            (uint8_t)((myLastCtr>>8)&0xFF),  (uint8_t)( myLastCtr&0xFF)
     };
     uint8_t iv[12];
-    esp_fill_random(iv, sizeof(iv));
-
-    // AES-256-GCM
-    mbedtls_gcm_context g;
-    mbedtls_gcm_init(&g);
-    if (mbedtls_gcm_setkey(&g, MBEDTLS_CIPHER_ID_AES, sessKey_m2f, 256) != 0) {
-        mbedtls_gcm_free(&g); return false;
-    }
+    Encryption::random_bytes(iv, 12);
 
     std::string ct;
     ct.resize(in.length());
     uint8_t tag[16];
-    if (mbedtls_gcm_crypt_and_tag(&g, MBEDTLS_GCM_ENCRYPT, in.length(),
-                                  iv, 12, aad, sizeof(aad),
-                                  reinterpret_cast<const unsigned char *>(in.c_str()), (uint8_t*)ct.data(), 16, tag) != 0) {
-        mbedtls_gcm_free(&g); return false;
+
+    if(!Encryption::encryptAESGCM(&in, &ct, iv, tag, aad, &out, sessKey_m2f)){
+        return false;
     }
-    mbedtls_gcm_free(&g);
 
     // Pakiet: [ctr:4][nonce:12][cipher...][tag:16]
     out.erase();

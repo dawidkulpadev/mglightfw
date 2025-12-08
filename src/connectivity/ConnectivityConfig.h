@@ -5,7 +5,7 @@
 #ifndef MGLIGHTFW_CONNECTIVITYCONFIG_H
 #define MGLIGHTFW_CONNECTIVITYCONFIG_H
 
-#include "../new_bleln/BLELNServer.h"
+#include "../bleln/BLELNServer.h"
 #include "config.h"
 #include "DeviceConfig.h"
 #include "SuperString.h"

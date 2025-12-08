@@ -6,8 +6,8 @@
 #define MGLIGHTFW_G2_CONNECTIVITY_H
 
 #include <Arduino.h>
-#include "../new_bleln/BLELNClient.h"
-#include "../new_bleln/BLELNServer.h"
+#include "../bleln/BLELNClient.h"
+#include "../bleln/BLELNServer.h"
 #include "config.h"
 #include "SuperString.h"
 #include "DeviceConfig.h"

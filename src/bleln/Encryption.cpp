@@ -3,6 +3,10 @@
 //
 
 #include "Encryption.h"
+#include <mbedtls/gcm.h>
+
+#include <mbedtls/ecdh.h>
+#include <mbedtls/md.h>
 
 bool Encryption::rngInitialised=false;
 mbedtls_entropy_context Encryption::entropy;
@@ -50,4 +54,89 @@ Encryption::hkdf_sha256(const uint8_t *salt, size_t salt_len, const uint8_t *ikm
 
 mbedtls_entropy_context *Encryption::getEntropy() {
     return &entropy;
+}
+
+bool Encryption::ecdh_gen(uint8_t *pub65, mbedtls_ecp_group &g, mbedtls_mpi &d) {
+    mbedtls_ecp_point Q{};
+
+    mbedtls_ecp_group_init(&g);
+    mbedtls_mpi_init(&d);
+    mbedtls_ecp_point_init(&Q);
+    if(mbedtls_ecp_group_load(&g, MBEDTLS_ECP_DP_SECP256R1)!=0)
+        return false;
+
+    if(mbedtls_ecp_gen_keypair(&g,&d,&Q,mbedtls_ctr_drbg_random,&ctr_drbg)!=0)
+        return false;
+
+    size_t olen=0;
+    if(mbedtls_ecp_point_write_binary(&g,&Q,MBEDTLS_ECP_PF_UNCOMPRESSED,&olen,pub65,65)!=0)
+        return false;
+
+    return (olen==65 && pub65[0]==0x04);
+}
+
+bool Encryption::ecdh_shared(const mbedtls_ecp_group &g, const mbedtls_mpi &d, const uint8_t *pub65, uint8_t *out) {
+    mbedtls_ecp_point P;
+    mbedtls_ecp_point_init(&P);
+    if(mbedtls_ecp_point_read_binary(&g,&P,pub65,65)!=0){
+        mbedtls_ecp_point_free(&P);
+        return false;
+    }
+    mbedtls_mpi sh;
+    mbedtls_mpi_init(&sh);
+    if(mbedtls_ecdh_compute_shared((mbedtls_ecp_group*)&g,&sh,&P,(mbedtls_mpi*)&d,mbedtls_ctr_drbg_random,&ctr_drbg)!=0){
+        mbedtls_ecp_point_free(&P); mbedtls_mpi_free(&sh);
+        return false;
+    }
+    bool ok = (mbedtls_mpi_write_binary(&sh,out,32)==0);
+
+    mbedtls_ecp_point_free(&P);
+    mbedtls_mpi_free(&sh);
+    return ok;
+}
+
+bool Encryption::decryptAESGCM(const uint8_t *ct, size_t ctLen, const uint8_t *iv, const uint8_t *tag,
+                               uint8_t *aad, std::string *out, uint8_t *key) {
+    mbedtls_gcm_context gcm;
+    mbedtls_gcm_init(&gcm);
+
+    if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, 256) != 0) {
+        mbedtls_gcm_free(&gcm);
+        return false;
+    }
+
+    out->resize(ctLen);
+    int rc = mbedtls_gcm_auth_decrypt(&gcm, ctLen,
+                                      iv, 12,
+                                      aad, sizeof(aad),
+                                      tag, 16,
+                                      ct, (unsigned char*)out->data());
+    mbedtls_gcm_free(&gcm);
+    if (rc != 0) {
+        return false;
+    }
+
+
+    return true;
+}
+
+bool Encryption::encryptAESGCM(const std::string *in, const std::string *ct, uint8_t *iv, uint8_t *tag,
+                               uint8_t *aad, std::string *out, uint8_t *key) {
+    // AES-256-GCM
+    mbedtls_gcm_context g;
+    mbedtls_gcm_init(&g);
+    if (mbedtls_gcm_setkey(&g, MBEDTLS_CIPHER_ID_AES, key, 256) != 0) {
+        mbedtls_gcm_free(&g); return false;
+    }
+
+    if (mbedtls_gcm_crypt_and_tag(&g, MBEDTLS_GCM_ENCRYPT, in->length(),
+                                  iv, 12, aad, sizeof(aad),
+                                  reinterpret_cast<const unsigned char *>(in->c_str()), (uint8_t*)ct->data(), 16, tag) != 0) {
+        mbedtls_gcm_free(&g); return false;
+    }
+    mbedtls_gcm_free(&g);
+
+
+
+    return true;
 }

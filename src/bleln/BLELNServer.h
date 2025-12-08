@@ -11,12 +11,6 @@
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 
-#include <mbedtls/gcm.h>
-#include <mbedtls/ecp.h>
-#include <mbedtls/ecdh.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/md.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>

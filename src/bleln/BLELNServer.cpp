@@ -3,7 +3,6 @@
 //
 
 #include "BLELNServer.h"
-
 #include <utility>
 #include "Encryption.h"
 
@@ -191,7 +190,7 @@ void BLELNServer::rxWorker() {
                 std::string v(reinterpret_cast<char*>(pkt.buf), pkt.len);
 
                 std::string plain;
-                if (cx->getSessionEnc()->decryptAESGCM((const uint8_t *) v.data(), v.size(), plain)) {
+                if (cx->getSessionEnc()->decryptMessage((const uint8_t *) v.data(), v.size(), plain)) {
                     if (plain.size() > 200) plain.resize(200);
                     for (auto &ch: plain) if (ch == '\0') ch = ' ';
 
@@ -215,7 +214,7 @@ void BLELNServer::rxWorker() {
 
 bool BLELNServer::sendEncrypted(BLELNConnCtx *cx, const std::string &msg) {
     std::string encrypted;
-    if(!cx->getSessionEnc()->encryptAESGCM(msg, encrypted)){
+    if(!cx->getSessionEnc()->encryptMessage(msg, encrypted)){
         Serial.println("Encrypt failed");
         return false;
     }

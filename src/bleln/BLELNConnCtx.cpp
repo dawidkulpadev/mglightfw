@@ -3,7 +3,6 @@
 //
 
 #include "BLELNConnCtx.h"
-#include "Encryption.h"
 
 
 BLELNConnCtx::BLELNConnCtx(uint16_t handle) {

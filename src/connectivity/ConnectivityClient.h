@@ -5,7 +5,7 @@
 #ifndef MGLIGHTFW_CONNECTIVITYCLIENT_H
 #define MGLIGHTFW_CONNECTIVITYCLIENT_H
 
-#include "../new_bleln/BLELNClient.h"
+#include "../bleln/BLELNClient.h"
 #include "string"
 #include "config.h"
 #include "WiFiManager.h"

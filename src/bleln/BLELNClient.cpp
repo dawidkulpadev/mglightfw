@@ -185,7 +185,7 @@ bool BLELNClient::handshake() {
 
 bool BLELNClient::sendEncrypted(const std::string &msg) {
     std::string pkt;
-    if(!sessionEnc.encryptAESGCM(msg, pkt)){
+    if(!sessionEnc.encryptMessage(msg, pkt)){
         return false;
     }
 
@@ -255,7 +255,7 @@ void BLELNClient::rxWorker() {
             if (xQueueReceive(g_rxQueue, &pkt, pdMS_TO_TICKS(50)) == pdTRUE) {
                 if (pkt.len >= 4 + 12 + 16) {
                     std::string plain;
-                    if(sessionEnc.decryptAESGCM(pkt.buf, pkt.len, plain)) {
+                    if(sessionEnc.decryptMessage(pkt.buf, pkt.len, plain)) {
                         if (onMsgRx) {
                             onMsgRx(plain);
                         }
