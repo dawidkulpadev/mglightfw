@@ -31,8 +31,8 @@ constexpr uint32_t sw_version= (sw_epoch << 11) | (sw_epoch_version << 4) | sw_e
 // 0001 1000 0001 0100 sw
 // 0x1814
 
-#define HW_0_0
-//#define HW_1_5
+//#define HW_0_0
+#define HW_1_5
 //#define HW_1_6
 
 #ifdef HW_0_0

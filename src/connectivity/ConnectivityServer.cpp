@@ -7,7 +7,7 @@
 #include "ConnectivityServer.h"
 
 ConnectivityServer::ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig, Preferences *preferences,
-                                       Connectivity::OnApiResponseCb onApiResponse,
+                                       WiFiManager *wifiManager, Connectivity::OnApiResponseCb onApiResponse,
                                        Connectivity::RequestModeChangeCb requestModeChange) {
     this->blelnServer= blelnServer;
     oar= std::move(onApiResponse);
@@ -18,6 +18,7 @@ ConnectivityServer::ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *d
     runAPITalksWorker= false;
     apiTalksRequestQueue= nullptr;
     apiTalksResponseQueue= nullptr;
+    wm= wifiManager;
 }
 
 void ConnectivityServer::loop() {
@@ -38,19 +39,28 @@ void ConnectivityServer::loop() {
             this->onMessageReceived(cliH, msg);
         });
         state= ServerModeState::Idle;
+
+
     } else if(state==ServerModeState::Idle){
-        handleAPIResponse();
+        if(wm->isConnected()) {
+            handleAPIResponse();
 
-        if(blelnServer->noClientsConnected() and ((millis() - lastServerSearch) >= BLELN_SERVER_SEARCH_INTERVAL_MS)){
-            lastServerSearch= millis();
-            blelnServer->startOtherServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](bool found){
-                if(found){
-                    Serial.println("Server mode - Switching to client mode (cleanup)...");
-                    this->state=ServerModeState::OtherBLELNServerFound;
-                }
+            if (blelnServer->noClientsConnected() and
+                ((millis() - lastServerSearch) >= BLELN_SERVER_SEARCH_INTERVAL_MS)) {
+                lastServerSearch = millis();
+                blelnServer->startOtherServerSearch(5000, BLELN_HTTP_REQUESTER_UUID, [this](bool found) {
+                    if (found) {
+                        Serial.println("Server mode - Switching to client mode (cleanup)...");
+                        this->state = ServerModeState::OtherBLELNServerFound;
+                    }
 
-                this->lastServerSearch= millis();
-            });
+                    this->lastServerSearch = millis();
+                });
+            }
+        } else if (wm->hasFailed()) {
+            // TODO: Become client
+        } else if(!wm->isRunning()){
+            wm->startConnect(config->getTimezone(), "dlink3", "sikakama2");
         }
     } else if(state==ServerModeState::OtherBLELNServerFound){
         handleAPIResponse();

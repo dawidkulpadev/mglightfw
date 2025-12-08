@@ -48,11 +48,10 @@
 #include "Day.h"
 #include "DeviceConfig.h"
 #include "ConfigManager.h"
-#include "WiFiManager.h"
 #include "InternalTempSensor.h"
 
 #include "config.h"
-#include "Connectivity/Connectivity.h"
+#include "connectivity/Connectivity.h"
 
 #define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
@@ -62,7 +61,6 @@
 int deviceMode;
 Preferences prefs;
 Connectivity connectivity;
-WiFiManager wifiManager;
 
 PWMLed light(0, pinout_intensity, 200);
 Day day;
@@ -229,11 +227,11 @@ void setup() {
             Serial.println("main - Day configuration received");
             Serial.printf("main - DS: %d, DE: %d, SSD: %d, SRD: %d, DLI: %d\r\n", day.getDs(), day.getDe(),
                           day.getSsd(), day.getSrd(), day.getDli());
+            ConfigManager::writeDay(&prefs, &day);
         } else {
             Serial.println("main - API Talk failed");
         }
     });
-
 
     light.start();
     if(deviceMode==DEVICE_MODE_NORMAL) {
@@ -254,7 +252,7 @@ void setup() {
                                 connectivityLoop();
                                 vTaskDelete(nullptr);
                             },
-                            "conlp", 4096, nullptr, 5, nullptr, 1);
+                            "conlp", 3000, nullptr, 5, nullptr, 1);
 }
 int lastAPI=-(API_RUN_INTERVAL/2);
 
@@ -280,7 +278,7 @@ void loop() {
         auto nowsse= static_cast<uint32_t>(time(nullptr));    // [seconds] since epoch
         float intensity= day.getSunIntensity(nowDayTime(), light.getIntensity());
         light.setIntensity(intensity);
-        if(intensity>50.0) {
+        if(intensity>30.0) {
             digitalWrite(pinout_fan, HIGH);
         } else {
             digitalWrite(pinout_fan, LOW);

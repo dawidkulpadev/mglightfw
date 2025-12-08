@@ -5,11 +5,12 @@
 #ifndef MGLIGHTFW_CONNECTIVITYCONFIG_H
 #define MGLIGHTFW_CONNECTIVITYCONFIG_H
 
-#include "BLELNServer.h"
+#include "../new_bleln/BLELNServer.h"
 #include "config.h"
 #include "DeviceConfig.h"
 #include "SuperString.h"
 #include "WiFiManager.h"
+#include "ConfigManager.h"
 
 class ConnectivityConfig {
 public:

@@ -5,7 +5,7 @@
 #ifndef MGLIGHTFW_CONNECTIVITYSERVER_H
 #define MGLIGHTFW_CONNECTIVITYSERVER_H
 
-#include "BLELNServer.h"
+#include "../new_bleln/BLELNServer.h"
 #include "DeviceConfig.h"
 #include "SuperString.h"
 #include "config.h"
@@ -40,7 +40,8 @@ public:
     enum class ServerModeState {Init, Idle, OtherBLELNServerFound};
 
     ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig, Preferences *preferences,
-                       Connectivity::OnApiResponseCb onApiResponse, Connectivity::RequestModeChangeCb requestModeChange);
+                       WiFiManager *wifiManager, Connectivity::OnApiResponseCb onApiResponse,
+                       Connectivity::RequestModeChangeCb requestModeChange);
     void loop();
     void apiTalksWorker();
     void requestApiTalk(char method, const std::string &point, const std::string &data);
@@ -74,6 +75,8 @@ private:
 
     // DEBUG
     unsigned long lastWaterMarkPrint=0;
+
+    WiFiManager *wm;
 
     char updateCacheData[1024]{};
     uint16_t updateCacheSector=0;

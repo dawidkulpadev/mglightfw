@@ -6,12 +6,15 @@
 #define MGLIGHTFW_G2_CONNECTIVITY_H
 
 #include <Arduino.h>
-#include "BLELNClient.h"
-#include "BLELNServer.h"
+#include "../new_bleln/BLELNClient.h"
+#include "../new_bleln/BLELNServer.h"
 #include "config.h"
 #include "SuperString.h"
 #include "DeviceConfig.h"
+#include "WiFiManager.h"
 #include <HTTPUpdate.h>
+
+#define RECENTLY_HAS_BEEN_SERVER_PREFS_TAG  "rhbs"
 
 class ConnectivityServer;
 class ConnectivityClient;
@@ -29,10 +32,14 @@ public:
     void startAPITalk(const std::string& apiPoint, char method, const std::string& data); // Talk with API about me
 
 private:
+    Preferences *prefs;
+
     BLELNServer blelnServer;
     ConnectivityServer *conServer= nullptr;
     ConnectivityClient *conClient= nullptr;
     ConnectivityConfig *conConfig= nullptr;
+
+    WiFiManager wiFiManager;
 
     // State
     ConnectivityMode conMode= ConnectivityMode::ClientMode;

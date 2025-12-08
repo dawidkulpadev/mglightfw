@@ -6,18 +6,17 @@
 
 #include <utility>
 
-ConnectivityClient::ConnectivityClient(DeviceConfig *deviceConfig, Connectivity::OnApiResponseCb onApiResponse,
+ConnectivityClient::ConnectivityClient(DeviceConfig *deviceConfig, WiFiManager *wifiManager,
+                                       Connectivity::OnApiResponseCb onApiResponse,
                                        Connectivity::RequestModeChangeCb requestModeChange) {
     config= deviceConfig;
     oar= std::move(onApiResponse);
     rmc= std::move(requestModeChange);
     state= State::Init;
     connectedFor= ConnectedFor::None;
-    wifiState= WiFiStateMachineStates::None;
     meApiTalkRequested= false;
+    wm= wifiManager;
     meApiTalkMutex= xSemaphoreCreateMutex();
-    wifi_connectStart= 0;
-    wifi_timeSyncStart= 0;
 }
 
 
@@ -27,10 +26,14 @@ void ConnectivityClient::loop() {
         blelnClient.start(BLE_NAME, [this](const std::string& msg){
             this->onServerResponse(msg);
         });
-        lastTimeSync = millis() - CLIENT_TIME_SYNC_INTERVAL + 4000; // First time sync in 4 seconds
+        lastTimeSync = (millis() - CLIENT_TIME_SYNC_INTERVAL) + 8000; // First time sync in 4 seconds
+        firstServerCheckMade= false;
+        uint32_t r= (esp_random() / (UINT32_MAX/5))+1;
+        Serial.printf("Client mode - First server check in %d seconds\r\n", r*30);
+        lastServerCheck = (millis() - CLIENT_SERVER_CHECK_INTERVAL) + 30000ul*r; // Instant server check + x seconds random
         state = State::Idle;
     } else if(state == State::Idle){
-        if(meApiTalkRequested){
+        if(firstServerCheckMade and meApiTalkRequested){
             if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(5))==pdTRUE) {
                 Serial.println("Client mode - Start API Talk");
                 state = State::ServerSearching;
@@ -42,15 +45,7 @@ void ConnectivityClient::loop() {
                 meApiTalkRequested = false;
                 xSemaphoreGive(meApiTalkMutex);
             }
-        } else if((millis() - lastServerCheck) >= CLIENT_SERVER_CHECK_INTERVAL){
-            Serial.println("Client mode - Start server check");
-            state= State::ServerChecking;
-            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID,
-                                          [this](const NimBLEAdvertisedDevice* dev){
-                                              this->onServerSearchResult(dev);
-                                          });
-            lastServerCheck = millis();
-        } else if((millis() - lastTimeSync) >= CLIENT_TIME_SYNC_INTERVAL){
+        } else if(firstServerCheckMade and ((millis() - lastTimeSync) >= (CLIENT_TIME_SYNC_INTERVAL)) ){
             Serial.println("Client mode - Start time sync");
             state = State::ServerSearching;
             blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID,
@@ -58,20 +53,29 @@ void ConnectivityClient::loop() {
                                               this->onServerSearchResult(dev);
                                           });
             connectedFor= ConnectedFor::TimeSync;
-            lastTimeSync= millis();
+            lastTimeSync = (millis() - CLIENT_TIME_SYNC_INTERVAL) + 8000ul;
+        } else if((millis() - lastServerCheck) >= CLIENT_SERVER_CHECK_INTERVAL){
+            Serial.println("Client mode - Start server check");
+            state= State::ServerChecking;
+            blelnClient.startServerSearch(5000, BLELN_HTTP_REQUESTER_UUID,
+                                          [this](const NimBLEAdvertisedDevice* dev){
+                                              this->onServerSearchResult(dev);
+                                          });
+            firstServerCheckMade= true;
+            lastServerCheck= millis();
         }
     } else if(state == State::ServerConnecting) {
         if(blelnClient.isConnected()) {
             if (!blelnClient.hasDiscoveredClient()) {
                 if (!blelnClient.discover()) {
-                    Serial.println("discover fail");
+                    Serial.println("Client mode - discover fail");
                     state = State::ServerConnectFailed;
                 } else {
                     if (!blelnClient.handshake()) {
-                        Serial.println("handshake fail");
+                        Serial.println("Client mode - handshake fail");
                         state = State::ServerConnectFailed;
                     } else {
-                        Serial.println("handshake OK");
+                        Serial.println("Client mode - handshake OK");
                         // cmState set to ServerConnected in message received callback when HDSH received
                     }
                 }
@@ -104,56 +108,11 @@ void ConnectivityClient::loop() {
         // Start WiFi check
         Serial.println("Client mode - No server, checking WiFi...");
         state=State::WiFiChecking;
-
-        // Release
-        // WiFi.begin(config->getSsid(), config->getPsk());
-        // Debug
-        WiFiClass::mode(WIFI_STA);
-        WiFi.begin("S101A_B", "gumowy_kot_wiadro_obiera");
-        wifi_connectStart= millis();
-        ntpRetriesCnt=0;
-        wifiState = WiFiStateMachineStates::Connecting;
+        wm->startConnect(config->getTimezone(), "dlink3", "sikakama2");
     } else if(state == State::WiFiChecking){
-        if(wifiState == WiFiStateMachineStates::Connecting){
-            if(WiFi.isConnected()){
-                syncWithNTP(config->getTimezone());
-                Serial.println("Connectivity (Normal): Waiting for NTP time sync...");
-                wifiState= WiFiStateMachineStates::NTPSyncing;
-            } else if((millis()-wifi_connectStart) >= WIFI_CONNECT_MAX_DURATION_MS){
-                Serial.println("Connectivity (Client): WiFi connectiong timeout");
-                wifiState= WiFiStateMachineStates::ConnectFailed;
-            }
-        } else if(wifiState == WiFiStateMachineStates::NTPSyncing){ // Wait for time sync with NTP
-            time_t nowSecs = time(nullptr);
-            if(nowSecs < (60*60*24*365*30)){ // 60s * 60m * 24h * 365days * 30years
-                if((millis() - wifi_timeSyncStart) >= (15 * 1000)){ // Wait max 15s
-                    Serial.println("Connectivity (Normal): Time sync failed! (inf loop)");
-                    wifiState= WiFiStateMachineStates::NTPSyncFailed;
-                }
-            } else {
-                struct tm timeinfo{};
-                getLocalTime(&timeinfo);
-                Serial.print(F("Connectivity (Normal): Time synced - "));
-                Serial.println(asctime(&timeinfo));
-
-                wifiState= WiFiStateMachineStates::Ready;
-                state= State::WiFiConnected;
-            }
-        } else if(wifiState == WiFiStateMachineStates::NTPSyncFailed){
-            if(ntpRetriesCnt<WIFI_NTP_MAX_RETIRES){
-                Serial.println("Connectivity (Normal): Time sync will be retried!");
-                wifiState= WiFiStateMachineStates::Connecting;
-                wifi_connectStart= millis();
-                ntpRetriesCnt++;
-            } else {
-                state= State::WiFiConnectFailed;
-            }
-        } else if(wifiState == WiFiStateMachineStates::ConnectFailed){
-            Serial.println("Connectivity (Normal): WiFi connect failed!");
-            WiFi.scanDelete();
-            WiFi.persistent(false);
-            WiFi.disconnect(false, false);
-            wifi_overallFails++;
+        if(wm->isConnected()){
+            state= State::WiFiConnected;
+        } else if(wm->hasFailed()){
             state= State::WiFiConnectFailed;
         }
     } else if(state == State::WiFiConnected){
@@ -202,6 +161,8 @@ void ConnectivityClient::onServerResponse(const std::string &msg) {
         if(state == State::WaitingForHTTPResponse){
             state= State::HTTPResponseReceived;
         }
+
+        lastTimeSync= millis();
     }
 }
 
@@ -228,8 +189,13 @@ void ConnectivityClient::onServerSearchResult(const NimBLEAdvertisedDevice* dev)
             state= State::Idle;
         }
     } else {
-        Serial.println("Client mode - BLELN server not found");
-        state = State::ServerNotFound;
+        if(state == State::ServerChecking) {
+            Serial.println("Client mode - BLELN server not found");
+            state = State::ServerNotFound;
+        } else if(state == State::ServerSearching){
+            Serial.println("Client mode - BLELN server not found. API talk failed.");
+            state = State::Idle;
+        }
     }
 }
 
@@ -247,12 +213,6 @@ void ConnectivityClient::switchToServer() {
     rmc(Connectivity::ConnectivityMode::ServerMode);
 }
 
-bool ConnectivityClient::syncWithNTP(const std::string &tz) {
-    configTzTime(tz.c_str(), "pool.ntp.org");
-    wifi_timeSyncStart= millis();
-
-    return true;
-}
 
 void ConnectivityClient::startAPITalk(const std::string& apiPoint, char method, const std::string& data) {
     if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(100))==pdTRUE) {
