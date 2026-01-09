@@ -6,7 +6,7 @@
 
 
 BLELNConnCtx::BLELNConnCtx(uint16_t handle) {
-    s= State::Initialised;
+    s= State::New;
     h = handle;
 }
 
@@ -27,7 +27,14 @@ BLELNConnCtx::State BLELNConnCtx::getState() {
 }
 
 bool BLELNConnCtx::makeSessionKey() {
-    return bse.makeMyKeys();
+    if(s==State::New) {
+        if(bse.makeMyKeys()){
+            s= State::Initialised;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 BLELNSessionEnc *BLELNConnCtx::getSessionEnc() {

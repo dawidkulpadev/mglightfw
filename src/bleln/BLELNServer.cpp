@@ -5,6 +5,78 @@
 #include "BLELNServer.h"
 #include <utility>
 #include "Encryption.h"
+#include "SuperString.h"
+
+
+void BLELNServer::start(Preferences *prefs, const std::string &name, const std::string &uuid) {
+    serviceUUID= uuid;
+
+    // Initialize mutexes
+    clisMtx= xSemaphoreCreateMutex();
+    keyExTxMtx = xSemaphoreCreateMutex();
+    txMtx = xSemaphoreCreateMutex();
+
+    // Initialize queues
+    dataRxQueue = xQueueCreate(20, sizeof(DataRxPacket));
+    keyRxQueue = xQueueCreate(20, sizeof(KeyRxPacket));
+
+    // Start worker thread
+    runWorker= true;
+    xTaskCreatePinnedToCore(
+            [](void* arg){
+                static_cast<BLELNServer*>(arg)->worker();
+                Serial.println("BLELN Server: rx worker stopped");
+                vTaskDelete(nullptr);
+            }, "BLELNWorker", 2560, this, 5, nullptr, 1);
+
+    // Initialize encryption salt (or find in memory)
+    size_t have = prefs->getBytesLength("salt");
+    if (have != 32) {
+        Encryption::random_bytes(g_psk_salt, 32);
+        g_epoch = 1;
+        prefs->putBytes("salt", g_psk_salt, 32);
+        prefs->putULong("epoch", g_epoch);
+    } else {
+        prefs->getBytes("salt", g_psk_salt, 32);
+        g_epoch = prefs->getULong("epoch", 1);
+        if (g_epoch == 0) g_epoch = 1;
+    }
+    Encryption::randomizer_init();
+
+    // Init NimBLE
+    NimBLEDevice::init(name);
+    NimBLEDevice::setMTU(247);
+
+    // Disable BLE securities
+    NimBLEDevice::setSecurityAuth(false, false, false);
+
+    // Start BLE server and set callbacks
+    srv = NimBLEDevice::createServer();
+    srv->setCallbacks(this);
+
+    // Create BLELN service and characteristics
+    auto* svc = srv->createService(serviceUUID);
+    chKeyExTx = svc->createCharacteristic(BLELNBase::KEYEX_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
+    chKeyExRx = svc->createCharacteristic(BLELNBase::KEYEX_RX_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+    chDataTx  = svc->createCharacteristic(BLELNBase::DATA_TX_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);// | NIMBLE_PROPERTY::READ_ENC);
+    chDataRx  = svc->createCharacteristic(BLELNBase::DATA_RX_UUID,  NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+
+    // Set characteristics callbacks
+    chKeyExTx->setCallbacks(new KeyExTxClb(this));
+    chKeyExRx->setCallbacks(new KeyExRxClb(this));
+    chDataRx->setCallbacks(new DataRxClb(this));
+
+    // Start BLELN service
+    svc->start();
+
+    // Publish/Advertise BLE server
+    auto* adv = NimBLEDevice::getAdvertising();
+    adv->setName(name);
+    adv->addServiceUUID(serviceUUID);
+    adv->enableScanResponse(true);
+
+    NimBLEDevice::startAdvertising();
+}
 
 
 void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
@@ -26,11 +98,11 @@ void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
         xSemaphoreGive(clisMtx);
         Serial.println(("New client handle: "+std::to_string(c->getHandle())).c_str());
     }
+
     if (!c->makeSessionKey()) {
         Serial.println("ECDH keygen fail");
         return;
     }
-
 
     NimBLEDevice::startAdvertising();
 }
@@ -55,69 +127,6 @@ void BLELNServer::onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, 
     NimBLEDevice::startAdvertising();
 }
 
-void BLELNServer::start(Preferences *prefs, const std::string &name, const std::string &uuid) {
-    serviceUUID= uuid;
-
-    clisMtx= xSemaphoreCreateMutex();
-    keyExTxMtx = xSemaphoreCreateMutex();
-    txMtx = xSemaphoreCreateMutex();
-    g_rxQueue = xQueueCreate(20, sizeof(RxPacket));
-
-    runRxWorker= true;
-    xTaskCreatePinnedToCore(
-            [](void* arg){
-                static_cast<BLELNServer*>(arg)->rxWorker();
-                Serial.println("BLELN Server: rx worker stopped");
-                vTaskDelete(nullptr);
-            },
-            "BLELNrx", 2560, this, 5, nullptr, 1);
-
-    size_t have = prefs->getBytesLength("salt");
-    if (have != 32) {
-        Encryption::random_bytes(g_psk_salt, 32);
-        g_epoch = 1;
-        prefs->putBytes("salt", g_psk_salt, 32);
-        prefs->putULong("epoch", g_epoch);
-    } else {
-        prefs->getBytes("salt", g_psk_salt, 32);
-        g_epoch = prefs->getULong("epoch", 1);
-        if (g_epoch == 0) g_epoch = 1;
-    }
-    Encryption::randomizer_init();
-
-    NimBLEDevice::init(name);
-    NimBLEDevice::setMTU(247);
-
-    // Security: bonding + MITM + LE Secure Connections
-    NimBLEDevice::setSecurityAuth(false, false, false);
-
-    srv = NimBLEDevice::createServer();
-    srv->setCallbacks(this);
-
-    auto* svc = srv->createService(serviceUUID);
-
-    chKeyExTx = svc->createCharacteristic(BLELNBase::KEYEX_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
-    chKeyExRx = svc->createCharacteristic(BLELNBase::KEYEX_RX_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
-    chDataTx  = svc->createCharacteristic(BLELNBase::DATA_TX_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);// | NIMBLE_PROPERTY::READ_ENC);
-    chDataRx  = svc->createCharacteristic(BLELNBase::DATA_RX_UUID,  NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
-
-    chKeyExTx->setCallbacks(new KeyExTxClb(this));
-    chKeyExRx->setCallbacks(new KeyExRxClb(this));
-    chDataRx->setCallbacks(new DataRxClb(this));
-
-    svc->start();
-
-    auto* adv = NimBLEDevice::getAdvertising();
-    adv->setName(name);
-    adv->addServiceUUID(serviceUUID);
-    adv->enableScanResponse(true);
-
-    NimBLEDevice::startAdvertising();
-
-    g_lastRotateMs = millis();
-}
-
-
 bool BLELNServer::getConnContext(uint16_t h, BLELNConnCtx** ctx) {
     *ctx = nullptr;
 
@@ -131,14 +140,6 @@ bool BLELNServer::getConnContext(uint16_t h, BLELNConnCtx** ctx) {
     xSemaphoreGive(clisMtx);
 
     return true;
-}
-
-void BLELNServer::setChDataTx(const std::string &s) {
-    chDataTx->setValue(s.c_str());
-}
-
-void BLELNServer::notifyChDataTx() {
-    chDataTx->notify();
 }
 
 void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
@@ -160,57 +161,7 @@ void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
     }
 }
 
-void BLELNServer::appendToQueue(uint16_t h, const std::string &m) {
-    auto* heapBuf = (uint8_t*)malloc(m.size());
-    if (!heapBuf) return;
-    memcpy(heapBuf, m.data(), m.size());
 
-    RxPacket pkt{ h, m.size(), heapBuf };
-    if (xQueueSend(g_rxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
-        free(heapBuf);
-    }
-}
-
-void BLELNServer::rxWorker() {
-   for(;;) {
-        if(!runRxWorker){
-            if (g_rxQueue) {
-                RxPacket pkt{};
-                while (xQueueReceive(g_rxQueue, &pkt, 0) == pdPASS) {
-                    free(pkt.buf);
-                }
-            }
-            return;
-        }
-
-        RxPacket pkt{};
-        if (xQueueReceive(g_rxQueue, &pkt, 0) == pdTRUE) {
-            BLELNConnCtx *cx;
-            if(getConnContext(pkt.conn, &cx) and (cx!= nullptr)) {
-                std::string v(reinterpret_cast<char*>(pkt.buf), pkt.len);
-
-                std::string plain;
-                if (cx->getSessionEnc()->decryptMessage((const uint8_t *) v.data(), v.size(), plain)) {
-                    if (plain.size() > 200) plain.resize(200);
-                    for (auto &ch: plain) if (ch == '\0') ch = ' ';
-
-                    if(onMsgReceived)
-                        onMsgReceived(cx->getHandle(), plain);
-                } else {
-                    // TODO: Inform error
-                }
-
-                free(pkt.buf);
-            }
-        }
-
-        if(uxQueueMessagesWaiting(g_rxQueue)>0){
-            vTaskDelay(pdMS_TO_TICKS(1));
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
-    }
-}
 
 bool BLELNServer::sendEncrypted(BLELNConnCtx *cx, const std::string &msg) {
     std::string encrypted;
@@ -240,30 +191,13 @@ void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
         return;
     }
 
-    appendToQueue(info.getConnHandle(), v);
+    appendToDataQueue(info.getConnHandle(), v);
 }
 
 void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
-    Serial.println("Received keyRX");
-    BLELNConnCtx *cx;
-    if(!getConnContext(info.getConnHandle(), &cx)){
-        return;
-    }
-    if (!cx) return;
+    const std::string &v= c->getValue();
 
-    const std::string &v = c->getValue();
-    // [ver=1][cliPub:65][cliNonce:12]
-    if (v.size()!=1+65+12 || (uint8_t)v[0]!=1) { Serial.println("[HX] bad packet"); return; }
-
-    bool r= cx->getSessionEnc()->deriveFriendsKey((const uint8_t*)&v[1],
-                                               (const uint8_t*)&v[1+65], g_psk_salt,
-                                               g_epoch);
-
-    if (!r ) {
-        Serial.println("[HX] derive failed"); return;
-    }
-    cx->setState(BLELNConnCtx::State::WaitingForCert);
-    sendEncrypted(cx, "$HDSH,OK");
+    appendToKeyQueue(info.getConnHandle(), v);
 }
 
 void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
@@ -302,10 +236,10 @@ bool BLELNServer::sendEncrypted(const std::string &msg) {
 void BLELNServer::stop() {
     NimBLEDevice::stopAdvertising();
     // Stop rx worker
-    runRxWorker= false;
+    runWorker= false;
 
-    if(g_rxQueue)
-        xQueueReset(g_rxQueue);
+    if(dataRxQueue)
+        xQueueReset(dataRxQueue);
 
     // Disconnect every client
     if (srv!=nullptr) {
@@ -406,5 +340,128 @@ bool BLELNServer::noClientsConnected() {
     }
 
     return clisCnt==0;
+}
+
+void BLELNServer::worker() {
+    while(runWorker){
+        // Check key queue
+        KeyRxPacket keyPkt{};
+        if(xQueueReceive(keyRxQueue, &keyPkt, 0)==pdTRUE){
+            // If new key message received
+            BLELNConnCtx *cx;
+            // Find context for client who sent message
+            if(getConnContext(keyPkt.conn, &cx) and (cx!= nullptr)) {
+                if(cx->getState()==BLELNConnCtx::State::WaitingForKey){
+                    // If I'm waiting for clients session key
+                    // [ver=1][cliPub:65][cliNonce:12]
+                    if (keyPkt.len!=1+65+12 || keyPkt.buf[0]!=1) {
+                        Serial.println("[HX] bad packet");
+                    } else {
+                        // Read clients session key
+                        bool r= cx->getSessionEnc()->deriveFriendsKey(keyPkt.buf+1,
+                                                                      keyPkt.buf+1+65, g_psk_salt,
+                                                                      g_epoch);
+                        if (r) {
+                            cx->setState(BLELNConnCtx::State::WaitingForCert);
+                            std::string msg="$CERT,";
+                            msg.append(authStore.getSignedCert());
+                            sendEncrypted(cx, msg);
+                        } else {
+                            Serial.println("[HX] derive failed");
+                        }
+                    }
+                } else if(cx->getState()==BLELNConnCtx::State::WaitingForCert){
+                    // If I'm waiting for clients certificate
+                    std::string plainKeyMsg;
+                    if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
+                        StringList parts= splitCsvRespectingQuotes(plainKeyMsg);
+                        if(parts[0]=="$CERT" and parts.size()==3){
+                            if(authStore.verifyCert(parts[1], parts[2])){
+                                // TODO: Derive client public key and ID
+                                // TODO: Random and send nonce
+                                cx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+                            } else {
+                                // TODO: Auth failed
+                                cx->setState(BLELNConnCtx::State::AuthFailed);
+                            }
+                        } else {
+                            // TODO: Failed auth
+                            cx->setState(BLELNConnCtx::State::AuthFailed);
+                        }
+                    } else {
+                        // TODO: Failed auth
+                        cx->setState(BLELNConnCtx::State::AuthFailed);
+                    }
+                } else if(cx->getState()==BLELNConnCtx::State::ChallengeResponseCli){
+                    // If I'm waiting for clients challenge response
+                    // TODO: Verify response
+                    cx->setState(BLELNConnCtx::State::Authorised);
+                    // TODO: If wrong response -> disconnect
+                }
+            }
+
+            free(keyPkt.buf);
+        }
+
+        // Check data queue
+        DataRxPacket dataPkt{};
+        if (xQueueReceive(dataRxQueue, &dataPkt, 0) == pdTRUE) {
+            // If new data message in queue
+            BLELNConnCtx *cx;
+            // Find context for client who sent data message
+            if(getConnContext(dataPkt.conn, &cx) and (cx!= nullptr)) {
+                if(cx->getState()==BLELNConnCtx::State::Authorised) {
+                    std::string v(reinterpret_cast<char *>(dataPkt.buf), dataPkt.len);
+
+                    std::string plain;
+                    if (cx->getSessionEnc()->decryptMessage((const uint8_t *) v.data(), v.size(), plain)) {
+                        if (plain.size() > 200) plain.resize(200);
+                        for (auto &ch: plain) if (ch == '\0') ch = ' ';
+
+                        if (onMsgReceived)
+                            onMsgReceived(cx->getHandle(), plain);
+                    } else {
+                        // TODO: Inform error
+                    }
+                } else {
+                    // Unauthorised client send message!
+                    // TODO: Disconnect this client
+                }
+            }
+
+            free(dataPkt.buf);
+        }
+
+        // Pause task
+        if((uxQueueMessagesWaiting(dataRxQueue) > 0) or (uxQueueMessagesWaiting(keyRxQueue) > 0)){
+            vTaskDelay(pdMS_TO_TICKS(1));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+
+    // TODO: Cleanup queues
+}
+
+void BLELNServer::appendToDataQueue(uint16_t h, const std::string &m) {
+    auto* heapBuf = (uint8_t*)malloc(m.size());
+    if (!heapBuf) return;
+    memcpy(heapBuf, m.data(), m.size());
+
+    DataRxPacket pkt{h, m.size(), heapBuf };
+    if (xQueueSend(dataRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+        free(heapBuf);
+    }
+}
+
+void BLELNServer::appendToKeyQueue(uint16_t h, const std::string &m) {
+    auto* heapBuf = (uint8_t*)malloc(m.size());
+    if (!heapBuf) return;
+    memcpy(heapBuf, m.data(), m.size());
+
+    KeyRxPacket pkt{h, m.size(), heapBuf };
+    if (xQueueSend(keyRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+        free(heapBuf);
+    }
 }
 

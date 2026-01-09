@@ -11,7 +11,7 @@
 
 class BLELNConnCtx {
 public:
-    enum class State {Initialised, WaitingForKey, WaitingForCert, ChallengeResponseCli ,ChallengeResponseSer, Authorised};
+    enum class State {New, Initialised, WaitingForKey, WaitingForCert, ChallengeResponseCli ,ChallengeResponseSer, Authorised, AuthFailed};
     explicit BLELNConnCtx(uint16_t handle);
     ~BLELNConnCtx();
 

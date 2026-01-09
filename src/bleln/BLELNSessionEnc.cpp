@@ -137,10 +137,9 @@ bool BLELNSessionEnc::encryptMessage(const std::string &in, std::string &out) {
     ct.resize(in.length());
     uint8_t tag[16];
 
-    if(!Encryption::encryptAESGCM(&in, &ct, iv, tag, aad, &out, sessKey_m2f)){
+    if(!Encryption::encryptAESGCM(&in, iv, tag, aad, &ct, sessKey_m2f)){
         return false;
     }
-
     // Pakiet: [ctr:4][nonce:12][cipher...][tag:16]
     out.erase();
     out.append((char*)ctrBE,4);

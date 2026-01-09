@@ -23,12 +23,19 @@ public:
     static bool ecdh_gen(uint8_t *pub65, mbedtls_ecp_group &g, mbedtls_mpi &d);
     static bool ecdh_shared(const mbedtls_ecp_group &g, const mbedtls_mpi &d, const uint8_t *pub65, uint8_t *out);
 
+    static std::string base64Encode(uint8_t *data, size_t dlen);
+    static size_t base64Decode(const std::string &in, uint8_t *out, size_t outLen);
+
     static bool decryptAESGCM(const uint8_t* ct, size_t ctLen, const uint8_t *iv, const uint8_t *tag,
                               uint8_t *aad, std::string *out, uint8_t *key);
-    static bool encryptAESGCM(const std::string *in, const std::string *ct, uint8_t *iv, uint8_t *tag,
+    static bool encryptAESGCM(const std::string *in, uint8_t *iv, uint8_t *tag,
                               uint8_t *aad, std::string *out, uint8_t *key);
 
-    static mbedtls_entropy_context* getEntropy();
+    static bool signDataMbedTLS_P256_RS(const uint8_t* data, size_t dataLen,
+                                             const uint8_t* privKeyD, size_t privKeyDLen,
+                                             uint8_t* signatureOut, size_t sigOutLen);
+    static bool verifyCertificateMbedTLS(const uint8_t* data, size_t dataLen, const uint8_t* signature, size_t sigLen,
+                                  const uint8_t* pubKeyRaw, size_t pubKeyLen);
 
 private:
     static bool rngInitialised;

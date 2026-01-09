@@ -1,0 +1,15 @@
+NVM:
+- PCSign - Product certificate sign
+- ManuPub - Manufacture public key
+- DevPub - devices public key
+- DevPriv - devices private key
+
+Product certificate:
+- Product generation
+- Device ID (devices mac address)
+- Devices public key
+
+
+Wszystko przesyłane kanałem DataRx i DataTx musi być obsługiwane przez std::string (ascii) (przed zaszyfrowaniem)
+W KeyTx i KeyRx pierwsza przesyłana wartość jest kluczem jako surowe bajty ale potem wszystko musi być w formacie ascii
+i obsługiwane przez std::string (przed zaszyfrowaniem). Wszystkie ciągi surowe ciągi bajtów enkoduje się base64

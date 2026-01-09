@@ -12,7 +12,7 @@
 typedef std::vector<std::string> StringList;
 
 StringList split(const std::string &s, char d);
-StringList splitCsvRespectingQuotes(const std::string& s);
+StringList splitCsvRespectingQuotes(const std::string& s, char delim=',');
 void removeLeading(std::string &s, const std::string &l);
 void removeLeading(std::string &s, char c);
 void removeTrailing(std::string &s, const std::string &l);

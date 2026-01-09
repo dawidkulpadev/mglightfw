@@ -23,7 +23,7 @@ StringList split(const std::string &s, char d){
     return parts;
 }
 
-StringList splitCsvRespectingQuotes(const std::string& s) {
+StringList splitCsvRespectingQuotes(const std::string& s, char delim) {
     std::vector<std::string> out;
     std::string cur;
     bool inQuotes = false;
@@ -35,7 +35,7 @@ StringList splitCsvRespectingQuotes(const std::string& s) {
 
         if (inQuotes) {
             if (ch == '"') {
-                bool nextIsSepOrEnd = (i + 1 == n) || (s[i + 1] == ',');
+                bool nextIsSepOrEnd = (i + 1 == n) || (s[i + 1] == delim);
                 if (nextIsSepOrEnd) {
                     inQuotes = false;
                     continue;
@@ -46,7 +46,7 @@ StringList splitCsvRespectingQuotes(const std::string& s) {
                 cur.push_back(ch);
             }
         } else {
-            if (ch == ',') {
+            if (ch == delim) {
                 out.push_back(cur);
                 cur.clear();
                 startedWithQuote = false;

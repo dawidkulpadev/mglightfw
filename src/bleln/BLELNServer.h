@@ -8,6 +8,7 @@
 #include "Arduino.h"
 #include "BLELNConnCtx.h"
 #include "BLELNBase.h"
+#include "BLELNAuthentication.h"
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 
@@ -18,10 +19,16 @@
 
 #define ROTATE_MS (24ul * 60ul * 60ul * 1000ul)
 
-struct RxPacket {
+struct DataRxPacket {
     uint16_t conn;
     size_t   len;
-    uint8_t* buf;    // malloc/free
+    uint8_t *buf;    // malloc/free
+};
+
+struct KeyRxPacket {
+    uint16_t conn;
+    size_t len;
+    uint8_t *buf; // malloc/free
 };
 
 class BLELNServer : public NimBLEScanCallbacks, public NimBLEServerCallbacks{
@@ -34,14 +41,11 @@ public:
 
     bool getConnContext(uint16_t h, BLELNConnCtx** c);
 
-    void setChDataTx(const std::string &s);
-    void notifyChDataTx();
-
-
     bool noClientsConnected();
 
-    void appendToQueue(uint16_t h, const std::string &m);
-    void rxWorker();
+    void appendToDataQueue(uint16_t h, const std::string &m);
+    void appendToKeyQueue(uint16_t h, const std::string &m);
+    void worker();
     bool sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
     bool sendEncrypted(uint16_t h, const std::string& msg);
     bool sendEncrypted(const std::string& msg);
@@ -49,6 +53,7 @@ public:
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
 
 private:
+    // Intefaces
     std::function<void(uint16_t cliH, const std::string& msg)> onMsgReceived;
 
     std::string serviceUUID;
@@ -61,7 +66,9 @@ private:
     SemaphoreHandle_t clisMtx = nullptr;
     SemaphoreHandle_t keyExTxMtx = nullptr;
     SemaphoreHandle_t txMtx = nullptr;
-    QueueHandle_t g_rxQueue;
+    QueueHandle_t dataRxQueue;
+    QueueHandle_t keyRxQueue;
+    bool runWorker;
 
     // Encryption
     uint8_t g_psk_salt[32];
@@ -69,8 +76,8 @@ private:
     uint32_t g_lastRotateMs = 0;
 
     // BLELN
+    BLELNAuthentication authStore;
     std::vector<BLELNConnCtx> connCtxs;
-    bool runRxWorker=false;
 
     bool scanning = false;
     std::function<void(bool found)> onScanResult;
