@@ -139,9 +139,9 @@ bool Encryption::encryptAESGCM(const std::string *in, uint8_t *iv, uint8_t *tag,
 }
 
 
-bool Encryption::verifyCertificateMbedTLS(const uint8_t* data, size_t dataLen,
-                                          const uint8_t* signature, size_t sigLen,
-                                          const uint8_t* pubKeyRaw, size_t pubKeyLen){
+bool Encryption::verifySign_P256_RS(const uint8_t* data, size_t dataLen,
+                                    const uint8_t* signature, size_t sigLen,
+                                    const uint8_t* pubKeyRaw, size_t pubKeyLen){
     // Przyjmujemy: ECDSA P-256, surowy podpis R||S (64 bajty) i klucz publiczny w formacie
     //  - 65 bajtów: [0x04 | X(32) | Y(32)]  (nieskompresowany)
     //  - 64 bajty:  [X(32) | Y(32)]         (bez prefiksu – dodamy sami)
@@ -228,9 +228,9 @@ bool Encryption::verifyCertificateMbedTLS(const uint8_t* data, size_t dataLen,
 // privKeyD - klucz prywatny ECDSA P-256 R||S o długości 64 bajtów
 // privKeyDLen - długość klucza. Tutaj przyjmiemy że zawsze będzie 64 bajty
 // signatureOut - musi być tablicą 64 bajty
-bool Encryption::signDataMbedTLS_P256_RS(const uint8_t* data, size_t dataLen,
-                                         const uint8_t* privKeyD, size_t privKeyDLen,
-                                         uint8_t* signatureOut, size_t sigOutLen) {
+bool Encryption::signData_P256_RS(const uint8_t* data, size_t dataLen,
+                                  const uint8_t* privKeyD, size_t privKeyDLen,
+                                  uint8_t* signatureOut, size_t sigOutLen) {
     // Podpis: ECDSA P-256, output raw R||S (64B)
     // Klucz prywatny: skalar d (32B) big-endian
 

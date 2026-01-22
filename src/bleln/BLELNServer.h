@@ -17,8 +17,6 @@
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 
-#define ROTATE_MS (24ul * 60ul * 60ul * 1000ul)
-
 struct DataRxPacket {
     uint16_t conn;
     size_t   len;
@@ -36,27 +34,20 @@ public:
     // User methods
     void start(Preferences *prefs, const std::string &name, const std::string &uuid);
     void stop();
-
     void startOtherServerSearch(uint32_t durationMs, const std::string &therUUID, const std::function<void(bool)>& onResult);
-
     bool getConnContext(uint16_t h, BLELNConnCtx** c);
-
     bool noClientsConnected();
 
-    void appendToDataQueue(uint16_t h, const std::string &m);
-    void appendToKeyQueue(uint16_t h, const std::string &m);
     void worker();
+
     bool sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
     bool sendEncrypted(uint16_t h, const std::string& msg);
     bool sendEncrypted(const std::string& msg);
 
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
-
 private:
     // Intefaces
     std::function<void(uint16_t cliH, const std::string& msg)> onMsgReceived;
-
-    std::string serviceUUID;
 
     // NimBLE
     NimBLEServer* srv = nullptr;
@@ -64,7 +55,6 @@ private:
 
     // Multithreading
     SemaphoreHandle_t clisMtx = nullptr;
-    SemaphoreHandle_t keyExTxMtx = nullptr;
     SemaphoreHandle_t txMtx = nullptr;
     QueueHandle_t dataRxQueue;
     QueueHandle_t keyRxQueue;
@@ -79,6 +69,7 @@ private:
     BLELNAuthentication authStore;
     std::vector<BLELNConnCtx> connCtxs;
 
+    std::string serviceUUID;
     bool scanning = false;
     std::function<void(bool found)> onScanResult;
     std::string searchedUUID;
@@ -86,6 +77,12 @@ private:
     // Private methods
     bool sendEncrypted(int i, const std::string& msg);
     void sendKeyToClient(BLELNConnCtx *cx);
+    void sendCertToClient(BLELNConnCtx *cx);
+    void sendChallengeNonce(BLELNConnCtx *cx);
+    void sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign);
+    void disconnectClient(BLELNConnCtx *cx, uint8_t reason=BLE_ERR_REM_USER_CONN_TERM);
+    void appendToDataQueue(uint16_t h, const std::string &m);
+    void appendToKeyQueue(uint16_t h, const std::string &m);
 
     // Callbacks
     void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override;

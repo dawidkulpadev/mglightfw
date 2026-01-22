@@ -41,3 +41,17 @@ BLELNSessionEnc *BLELNConnCtx::getSessionEnc() {
     return &bse;
 }
 
+void BLELNConnCtx::setCertData(uint8_t *macAddress, uint8_t *publicKey) {
+    memcpy(mac, macAddress, 6);
+    memcpy(pubKey, publicKey, BLELN_DEV_KEY_LEN);
+}
+
+void BLELNConnCtx::setTestNonce(uint8_t *nonce) {
+    memcpy(testNonce, nonce, BLELN_TEST_NONCE_LEN);
+}
+
+bool BLELNConnCtx::verifyChallengeResponseAnswer(uint8_t *nonceSign) {
+    return Encryption::verifySign_P256_RS(testNonce, BLELN_TEST_NONCE_LEN, nonceSign,
+                                          BLELN_DEV_SIGN_LEN, pubKey, BLELN_DEV_KEY_LEN);
+}
+

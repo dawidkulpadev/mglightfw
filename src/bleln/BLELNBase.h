@@ -5,6 +5,18 @@
 #ifndef MGLIGHTFW_BLELNBASE_H
 #define MGLIGHTFW_BLELNBASE_H
 
+#define BLELN_TEST_NONCE_LEN        48
+#define BLELN_DEV_KEY_LEN           64
+#define BLELN_MANU_KEY_LEN          64
+#define BLELN_DEV_SIGN_LEN          64
+#define BLELN_MANU_SIGN_LEN         64
+#define BLELN_NONCE_SIGN_LEN        64
+
+#define BLELN_MSG_TITLE_CERT                                "$CERT"
+#define BLELN_MSG_TITLE_CHALLENGE_RESPONSE_NONCE            "$CHRN"
+#define BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW_AND_NONCE   "$CHRAN"
+#define BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW             "$CHRA"
+#define BLELN_MSG_TITLE_AUTH_OK                             "$AUOK"
 
 class BLELNBase {
 public:
