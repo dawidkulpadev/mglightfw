@@ -74,6 +74,8 @@ private:
     std::function<void(bool found)> onScanResult;
     std::string searchedUUID;
 
+    unsigned long lastWaterMarkPrint=0;
+
     // Private methods
     bool sendEncrypted(int i, const std::string& msg);
     void sendKeyToClient(BLELNConnCtx *cx);

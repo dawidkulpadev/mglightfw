@@ -27,7 +27,7 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
                 static_cast<BLELNServer*>(arg)->worker();
                 Serial.println("BLELN Server: rx worker stopped");
                 vTaskDelete(nullptr);
-            }, "BLELNWorker", 2560, this, 5, nullptr, 1);
+            }, "BLELNWorker", 4096, this, 5, nullptr, 1);
 
     // Initialize encryption salt (or find in memory)
     size_t have = prefs->getBytesLength("salt");
@@ -205,6 +205,13 @@ bool BLELNServer::sendEncrypted(const std::string &msg) {
 
 void BLELNServer::worker() {
     while(runWorker){
+        if((millis() - lastWaterMarkPrint) >= 10000) {
+            UBaseType_t freeWords = uxTaskGetStackHighWaterMark(nullptr);
+            Serial.printf("BLELNServer stack free: %u\n\r",
+                          freeWords);
+            lastWaterMarkPrint= millis();
+        }
+
         // Check key queue
         KeyRxPacket keyPkt{};
         if(xQueueReceive(keyRxQueue, &keyPkt, 0)==pdTRUE){
@@ -218,11 +225,13 @@ void BLELNServer::worker() {
                     if (keyPkt.len!=1+65+12 || keyPkt.buf[0]!=1) {
                         Serial.println("[HX] bad packet");
                     } else {
+                        Serial.println("BLELNServer - Received clients key");
                         // Read clients session key
                         bool r= cx->getSessionEnc()->deriveFriendsKey(keyPkt.buf+1,
                                                                       keyPkt.buf+1+65, g_psk_salt,
                                                                       g_epoch);
                         if (r) {
+                            Serial.println("BLELNServer - Sending cert");
                             cx->setState(BLELNConnCtx::State::WaitingForCert);
                             sendCertToClient(cx);
                         } else {
@@ -235,6 +244,7 @@ void BLELNServer::worker() {
                     if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
                         StringList parts= splitCsvRespectingQuotes(plainKeyMsg);
                         if(parts[0]==BLELN_MSG_TITLE_CERT and parts.size()==3){
+                            Serial.println("BLELNServer - Received clients cert with sign");
                             uint8_t gen;
                             uint8_t fMac[6];
                             uint8_t fPubKey[BLELN_DEV_KEY_LEN];
@@ -246,8 +256,10 @@ void BLELNServer::worker() {
                             } else {
                                 disconnectClient(cx, BLE_ERR_AUTH_FAIL);
                                 cx->setState(BLELNConnCtx::State::AuthFailed);
+                                Serial.println("BLELNServer - WaitingForCert - invalid cert");
                             }
                         } else {
+                            Serial.println("BLELNServer - WaitingForCert - wrong message");
                             disconnectClient(cx, BLE_ERR_AUTH_FAIL);
                             cx->setState(BLELNConnCtx::State::AuthFailed);
                         }
@@ -261,6 +273,7 @@ void BLELNServer::worker() {
                     if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
                         StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
                         if(parts[0]==BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW_AND_NONCE and parts.size()==3) {
+                            Serial.println("BLELNServer - Received challenge response answer and nonce");
                             uint8_t nonceSign[BLELN_NONCE_SIGN_LEN];
                             Encryption::base64Decode(parts[1], nonceSign, BLELN_NONCE_SIGN_LEN);
                             if(cx->verifyChallengeResponseAnswer(nonceSign)){
@@ -271,11 +284,13 @@ void BLELNServer::worker() {
                                 sendChallengeNonceSign(cx, friendsNonceSign);
                                 cx->setState(BLELNConnCtx::State::ChallengeResponseSer);
                             } else {
+                                Serial.println("BLELNServer - ChallengeResponseCli - invalid sign");
                                 disconnectClient(cx, BLE_ERR_AUTH_FAIL);
                                 cx->setState(BLELNConnCtx::State::AuthFailed);
                             }
 
                         } else {
+                            Serial.println("BLELNServer - ChallengeResponseCli - wrong message");
                             disconnectClient(cx, BLE_ERR_AUTH_FAIL);
                             cx->setState(BLELNConnCtx::State::AuthFailed);
                         }
@@ -529,7 +544,20 @@ void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
 }
 
 void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
+    BLELNConnCtx *cx;
+    if(!getConnContext(info.getConnHandle(), &cx)){
+        Serial.println("Failed locking semaphore! (onWrite)");
+        return;
+    }
+    if (!cx) {
+        Serial.println("Received message from unknown client");
+        return;
+    }
     const std::string &v= c->getValue();
+
+    if (v.empty()) {
+        return;
+    }
 
     appendToKeyQueue(info.getConnHandle(), v);
 }

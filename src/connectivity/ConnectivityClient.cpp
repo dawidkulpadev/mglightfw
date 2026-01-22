@@ -29,8 +29,8 @@ void ConnectivityClient::loop() {
         lastTimeSync = (millis() - CLIENT_TIME_SYNC_INTERVAL) + 8000; // First time sync in 4 seconds
         firstServerCheckMade= false;
         uint32_t r= (esp_random() / (UINT32_MAX/5))+1;
-        Serial.printf("Client mode - First server check in %d seconds\r\n", r*30);
-        lastServerCheck = (millis() - CLIENT_SERVER_CHECK_INTERVAL) + 30000ul*r; // Instant server check + x seconds random
+        Serial.printf("Client mode - First server check in %d seconds\r\n", r*1);
+        lastServerCheck = (millis() - CLIENT_SERVER_CHECK_INTERVAL) + 1000ul*r; // Instant server check + x seconds random
         state = State::Idle;
     } else if(state == State::Idle){
         if(firstServerCheckMade and meApiTalkRequested){

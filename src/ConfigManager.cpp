@@ -21,6 +21,13 @@
 #include "ConfigManager.h"
 
 bool ConfigManager::readWifi(Preferences *prefs, DeviceConfig *config) {
+    config->setSsid("dlink3");
+    config->setPsk("sikakama2");
+    config->setUid("2");
+    config->setPicklock("test");
+    config->setTimezone("Europe/Warsaw");
+    return true;
+
     if( !prefs->isKey(CONFIGMANAGER_KEY_SSID) or
         !prefs->isKey(CONFIGMANAGER_KEY_PSK) or
         !prefs->isKey(CONFIGMANAGER_KEY_PICKLOCK) or

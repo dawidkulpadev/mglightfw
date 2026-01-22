@@ -26,24 +26,18 @@ void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *
             this->conMode= m;
         });
 
-        bool rhbs= preferences->getBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, false); // Recently has been in server mode
+        /* bool rhbs= preferences->getBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, false); // Recently has been in server mode
         if(rhbs) {
             Serial.println("Connectivity - Recently has been server. Start as server");
             conMode = ConnectivityMode::ServerMode;
         } else {
             Serial.println("Connectivity - Recently has been client. Start as client");
             conMode = ConnectivityMode::ClientMode;
-        }
-    }
+        } */
+        Serial.println("Connectivity - Start as client");
+        conMode = ConnectivityMode::ServerMode;
+     }
 }
-
-/**
- * Nie dzielić dzanych na normalne i abnormal jako dwie klasy tylko każdy wynik jest wektorem pokazującym miejsce w prestrzeni
- * i teraz podejście pierwsze to np zrobic że dane normalne mają pozycje blisko siebie a abnormalne nie ważne gdzie są ale ważne że
- * ich odległość od zbioru normalnego jest "duża"
- *
- * Autoenkoder - ważna rzecz
- */
 
 void Connectivity::loop() {
     switch(conMode){

@@ -36,6 +36,9 @@ std::string BLELNAuthentication::getSignedCert() {
     out.append(",");
     out.append(Encryption::base64Encode(certSign, BLELN_MANU_SIGN_LEN));
 
+    Serial.print("BLELNAuthentication - my cert: ");
+    Serial.println(out.c_str());
+
     return out;
 }
 
