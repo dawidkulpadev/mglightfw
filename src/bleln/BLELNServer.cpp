@@ -138,7 +138,6 @@ void BLELNServer::startOtherServerSearch(uint32_t durationMs, const std::string 
     scan->start(durationMs, false, false);
 }
 
-
 bool BLELNServer::getConnContext(uint16_t h, BLELNConnCtx** ctx) {
     *ctx = nullptr;
 
@@ -165,118 +164,6 @@ bool BLELNServer::noClientsConnected() {
     return clisCnt==0;
 }
 
-void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
-    BLELNConnCtx* c = nullptr;
-
-    if(!getConnContext(connInfo.getConnHandle(), &c)){
-        Serial.println("Failed searching for context!");
-        return;
-    }
-
-    if (c == nullptr) {
-        Serial.println("Creating new ConnCtx");
-        if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE){
-            Serial.println("Failed locking semaphore! (create new client)!");
-            return;
-        }
-        connCtxs.emplace_back(connInfo.getConnHandle());
-        c = (connCtxs.end()-1).base();
-        xSemaphoreGive(clisMtx);
-        Serial.println(("New client handle: "+std::to_string(c->getHandle())).c_str());
-    }
-
-    if (!c->makeSessionKey()) {
-        Serial.println("ECDH keygen fail");
-        return;
-    }
-
-    NimBLEDevice::startAdvertising();
-}
-
-void BLELNServer::onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) {
-    int removeIdx = -1;
-
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE){
-        Serial.println("Failed locking semaphore! (onDisconnect)");
-        return;
-    }
-    for (int i=0; i<connCtxs.size(); i++){
-        if (connCtxs[i].getHandle() == connInfo.getConnHandle()){
-            removeIdx = i;
-            break;
-        }
-    }
-    if(removeIdx>=0){
-        connCtxs.erase(connCtxs.begin()+removeIdx);
-    }
-    xSemaphoreGive(clisMtx);
-    NimBLEDevice::startAdvertising();
-}
-
-void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
-    // KEYEX_TX: [ver=1][epoch:4B][salt:32B][srvPub:65B][srvNonce:12B]
-    std::string keyex;
-    keyex.push_back(1);
-    keyex.append((const char*)&g_epoch, 4); // LE
-    keyex.append((const char*)g_psk_salt, 32);
-    keyex.append((const char*)cx->getSessionEnc()->getMyPub(),65);
-    keyex.append((const char*)cx->getSessionEnc()->getMyNonce(),12);
-
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(keyex);
-        chKeyExTx->notify(cx->getHandle());
-        cx->setState(BLELNConnCtx::State::WaitingForKey);
-        xSemaphoreGive(clisMtx);
-    } else {
-        Serial.println("Failed locking semaphore! (Key Exchange)");
-    }
-}
-
-void BLELNServer::sendCertToClient(BLELNConnCtx *cx) {
-    std::string msg=BLELN_MSG_TITLE_CERT;
-    msg.append(",").append(authStore.getSignedCert());
-
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
-        xSemaphoreGive(clisMtx);
-    } else {
-        Serial.println("Failed locking semaphore! (Send cert to client)");
-    }
-}
-
-void BLELNServer::sendChallengeNonce(BLELNConnCtx *cx) {
-    uint8_t nonce[BLELN_TEST_NONCE_LEN];
-    Encryption::random_bytes(nonce, BLELN_TEST_NONCE_LEN);
-    cx->setTestNonce(nonce);
-    std::string base64Nonce= Encryption::base64Encode(nonce, BLELN_TEST_NONCE_LEN);
-
-    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_NONCE;
-    msg.append(",").append(base64Nonce);
-
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
-        xSemaphoreGive(clisMtx);
-    } else {
-        Serial.println("Failed locking semaphore! (Send challenge nonce)");
-    }
-}
-
-void BLELNServer::sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign) {
-    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW;
-    std::string base64Sign= Encryption::base64Encode(sign, BLELN_NONCE_SIGN_LEN);
-    msg.append(",").append(base64Sign);
-
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
-        xSemaphoreGive(clisMtx);
-    } else {
-        Serial.println("Failed locking semaphore! (Send challenge sign)");
-    }
-}
-
 bool BLELNServer::sendEncrypted(BLELNConnCtx *cx, const std::string &msg) {
     std::string encrypted;
     if(!cx->getSessionEnc()->encryptMessage(msg, encrypted)){
@@ -294,78 +181,6 @@ bool BLELNServer::sendEncrypted(BLELNConnCtx *cx, const std::string &msg) {
     return true;
 }
 
-void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
-    BLELNConnCtx *cx;
-    if(!getConnContext(info.getConnHandle(), &cx)){
-        Serial.println("Failed locking semaphore! (onWrite)");
-        return;
-    }
-    if (!cx) {
-        Serial.println("Received message from unknown client");
-        return;
-    }
-    const std::string &v = c->getValue();
-
-    if (v.empty()) {
-        return;
-    }
-
-    appendToDataQueue(info.getConnHandle(), v);
-}
-
-void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
-    const std::string &v= c->getValue();
-
-    appendToKeyQueue(info.getConnHandle(), v);
-}
-
-void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
-    if(subValue>0) {
-        Serial.println("Client subscribed for KeyTX");
-        BLELNConnCtx *cx;
-        if (!getConnContext(connInfo.getConnHandle(), &cx) or (cx == nullptr)) return;
-
-        if (cx->getState()==BLELNConnCtx::State::Initialised) {
-            sendKeyToClient(cx);
-        }
-    } else {
-        Serial.println("Client unsubscribed for KeyTX");
-    }
-}
-
-bool BLELNServer::sendEncrypted(int i, const std::string &msg) {
-    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE) return false;
-
-    if(i<connCtxs.size()){
-        sendEncrypted(&connCtxs[i], msg);
-    }
-    xSemaphoreGive(clisMtx);
-
-    return true;
-}
-
-bool BLELNServer::sendEncrypted(const std::string &msg) {
-    for(int i=0; i<connCtxs.size(); i++){
-        if(!sendEncrypted(i, msg)) return false;
-    }
-
-    return true;
-}
-
-void BLELNServer::disconnectClient(BLELNConnCtx *cx, uint8_t reason){
-    if (srv!=nullptr) {
-        if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(300))==pdTRUE) {
-            srv->disconnect(cx->getHandle(), reason);
-            xSemaphoreGive(clisMtx);
-        }
-    }
-}
-
-
-void BLELNServer::setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb) {
-    onMsgReceived= std::move(cb);
-}
-
 bool BLELNServer::sendEncrypted(uint16_t h, const std::string &msg) {
     BLELNConnCtx *connCtx= nullptr;
     getConnContext(h, &connCtx);
@@ -380,25 +195,13 @@ bool BLELNServer::sendEncrypted(uint16_t h, const std::string &msg) {
     return false;
 }
 
-
-
-void BLELNServer::onResult(const NimBLEAdvertisedDevice *advertisedDevice) {
-    if (advertisedDevice->isAdvertisingService(NimBLEUUID(searchedUUID))) {
-        scanning = false;
-        if(onScanResult){
-            onScanResult(true);
-        }
+bool BLELNServer::sendEncrypted(const std::string &msg) {
+    for(int i=0; i<connCtxs.size(); i++){
+        if(!sendEncrypted(i, msg)) return false;
     }
+
+    return true;
 }
-
-void BLELNServer::onScanEnd(const NimBLEScanResults &scanResults, int reason) {
-    scanning = false;
-    if(onScanResult){
-        onScanResult(false);
-    }
-}
-
-
 
 void BLELNServer::worker() {
     while(runWorker){
@@ -532,6 +335,91 @@ void BLELNServer::worker() {
 
     // TODO: Cleanup queues
 }
+/// *************** PRIVATE - Methods ***************
+
+bool BLELNServer::sendEncrypted(int i, const std::string &msg) {
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE) return false;
+
+    if(i<connCtxs.size()){
+        sendEncrypted(&connCtxs[i], msg);
+    }
+    xSemaphoreGive(clisMtx);
+
+    return true;
+}
+
+void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
+    // KEYEX_TX: [ver=1][epoch:4B][salt:32B][srvPub:65B][srvNonce:12B]
+    std::string keyex;
+    keyex.push_back(1);
+    keyex.append((const char*)&g_epoch, 4); // LE
+    keyex.append((const char*)g_psk_salt, 32);
+    keyex.append((const char*)cx->getSessionEnc()->getMyPub(),65);
+    keyex.append((const char*)cx->getSessionEnc()->getMyNonce(),12);
+
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
+        chKeyExTx->setValue(keyex);
+        chKeyExTx->notify(cx->getHandle());
+        cx->setState(BLELNConnCtx::State::WaitingForKey);
+        xSemaphoreGive(clisMtx);
+    } else {
+        Serial.println("Failed locking semaphore! (Key Exchange)");
+    }
+}
+
+void BLELNServer::sendCertToClient(BLELNConnCtx *cx) {
+    std::string msg=BLELN_MSG_TITLE_CERT;
+    msg.append(",").append(authStore.getSignedCert());
+
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
+        chKeyExTx->setValue(msg);
+        chKeyExTx->notify(cx->getHandle());
+        xSemaphoreGive(clisMtx);
+    } else {
+        Serial.println("Failed locking semaphore! (Send cert to client)");
+    }
+}
+
+void BLELNServer::sendChallengeNonce(BLELNConnCtx *cx) {
+    uint8_t nonce[BLELN_TEST_NONCE_LEN];
+    Encryption::random_bytes(nonce, BLELN_TEST_NONCE_LEN);
+    cx->setTestNonce(nonce);
+    std::string base64Nonce= Encryption::base64Encode(nonce, BLELN_TEST_NONCE_LEN);
+
+    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_NONCE;
+    msg.append(",").append(base64Nonce);
+
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
+        chKeyExTx->setValue(msg);
+        chKeyExTx->notify(cx->getHandle());
+        xSemaphoreGive(clisMtx);
+    } else {
+        Serial.println("Failed locking semaphore! (Send challenge nonce)");
+    }
+}
+
+void BLELNServer::sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign) {
+    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW;
+    std::string base64Sign= Encryption::base64Encode(sign, BLELN_NONCE_SIGN_LEN);
+    msg.append(",").append(base64Sign);
+
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
+        chKeyExTx->setValue(msg);
+        chKeyExTx->notify(cx->getHandle());
+        xSemaphoreGive(clisMtx);
+    } else {
+        Serial.println("Failed locking semaphore! (Send challenge sign)");
+    }
+}
+
+void BLELNServer::disconnectClient(BLELNConnCtx *cx, uint8_t reason){
+    if (srv!=nullptr) {
+        if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(300))==pdTRUE) {
+            srv->disconnect(cx->getHandle(), reason);
+            xSemaphoreGive(clisMtx);
+        }
+    }
+}
 
 void BLELNServer::appendToDataQueue(uint16_t h, const std::string &m) {
     auto* heapBuf = (uint8_t*)malloc(m.size());
@@ -555,9 +443,111 @@ void BLELNServer::appendToKeyQueue(uint16_t h, const std::string &m) {
     }
 }
 
+/// *************** PRIVATE - Callbacks ***************
 
+void BLELNServer::onResult(const NimBLEAdvertisedDevice *advertisedDevice) {
+    if (advertisedDevice->isAdvertisingService(NimBLEUUID(searchedUUID))) {
+        scanning = false;
+        if(onScanResult){
+            onScanResult(true);
+        }
+    }
+}
 
+void BLELNServer::onScanEnd(const NimBLEScanResults &scanResults, int reason) {
+    scanning = false;
+    if(onScanResult){
+        onScanResult(false);
+    }
+}
 
+void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
+    BLELNConnCtx* c = nullptr;
 
+    if(!getConnContext(connInfo.getConnHandle(), &c)){
+        Serial.println("Failed searching for context!");
+        return;
+    }
 
+    if (c == nullptr) {
+        Serial.println("Creating new ConnCtx");
+        if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE){
+            Serial.println("Failed locking semaphore! (create new client)!");
+            return;
+        }
+        connCtxs.emplace_back(connInfo.getConnHandle());
+        c = (connCtxs.end()-1).base();
+        xSemaphoreGive(clisMtx);
+        Serial.println(("New client handle: "+std::to_string(c->getHandle())).c_str());
+    }
 
+    if (!c->makeSessionKey()) {
+        Serial.println("ECDH keygen fail");
+        return;
+    }
+
+    NimBLEDevice::startAdvertising();
+}
+
+void BLELNServer::onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) {
+    int removeIdx = -1;
+
+    if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100))!=pdTRUE){
+        Serial.println("Failed locking semaphore! (onDisconnect)");
+        return;
+    }
+    for (int i=0; i<connCtxs.size(); i++){
+        if (connCtxs[i].getHandle() == connInfo.getConnHandle()){
+            removeIdx = i;
+            break;
+        }
+    }
+    if(removeIdx>=0){
+        connCtxs.erase(connCtxs.begin()+removeIdx);
+    }
+    xSemaphoreGive(clisMtx);
+    NimBLEDevice::startAdvertising();
+}
+
+void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
+    BLELNConnCtx *cx;
+    if(!getConnContext(info.getConnHandle(), &cx)){
+        Serial.println("Failed locking semaphore! (onWrite)");
+        return;
+    }
+    if (!cx) {
+        Serial.println("Received message from unknown client");
+        return;
+    }
+    const std::string &v = c->getValue();
+
+    if (v.empty()) {
+        return;
+    }
+
+    appendToDataQueue(info.getConnHandle(), v);
+}
+
+void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
+    const std::string &v= c->getValue();
+
+    appendToKeyQueue(info.getConnHandle(), v);
+}
+
+void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
+    if(subValue>0) {
+        Serial.println("Client subscribed for KeyTX");
+        BLELNConnCtx *cx;
+        if (!getConnContext(connInfo.getConnHandle(), &cx) or (cx == nullptr)) return;
+
+        if (cx->getState()==BLELNConnCtx::State::Initialised) {
+            sendKeyToClient(cx);
+        }
+    } else {
+        Serial.println("Client unsubscribed for KeyTX");
+    }
+}
+
+void BLELNServer::setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb) {
+    onMsgReceived= std::move(cb);
+}

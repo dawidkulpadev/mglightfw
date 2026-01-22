@@ -38,13 +38,13 @@ public:
     bool getConnContext(uint16_t h, BLELNConnCtx** c);
     bool noClientsConnected();
 
-    void worker();
-
     bool sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
     bool sendEncrypted(uint16_t h, const std::string& msg);
     bool sendEncrypted(const std::string& msg);
 
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
+
+    void worker();
 private:
     // Intefaces
     std::function<void(uint16_t cliH, const std::string& msg)> onMsgReceived;
