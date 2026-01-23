@@ -1,9 +1,9 @@
 # Klucze NVM:
 ## Przestrzeń cert
-- pc_sign - Product certificate sign
-- manu_pub - Manufacture public key
-- dev_pub - devices public key
-- dev_priv - devices private key
+-pc_sign - Product certificate sign
+-manu_pub - Manufacture public key
+-dev_pub - devices public key
+-dev_priv - devices private key
 
 
 Product certificate:
@@ -12,7 +12,7 @@ Product certificate:
 - Devices public key    (base64)
 
 
-Wszystko przesyłane kanałem DataRx i DataTx musi być obsługiwane przez std::string (ascii) (przed zaszyfrowaniem)
+Wszystko przesyłane kanałem DataRx i DataTx musi być obsługiwane przez "std::string" (ascii) (przed zaszyfrowaniem)
 W KeyTx i KeyRx pierwsza przesyłana wartość jest kluczem jako surowe bajty ale potem wszystko musi być w formacie ascii
 i obsługiwane przez std::string (przed zaszyfrowaniem). Wszystkie surowe ciągi bajtów enkoduje się base64
 
