@@ -1,9 +1,9 @@
-# Klucze NVM:
-## Przestrzeń cert
--pc_sign - Product certificate sign
--manu_pub - Manufacture public key
--dev_pub - devices public key
--dev_priv - devices private key
+#Klucze NVM:
+##Przestrzeń cert
+* pc_sign - Product certificate sign
+* manu_pub - Manufacture public key
+* dev_pub - devices public key
+* dev_priv - devices private key
 
 
 Product certificate:
