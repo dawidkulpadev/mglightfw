@@ -1,5 +1,5 @@
-#Klucze NVM:
-##Przestrzeń cert
+# Klucze NVM:
+## Przestrzeń cert
 * pc_sign - Product certificate sign
 * manu_pub - Manufacture public key
 * dev_pub - devices public key
@@ -19,20 +19,21 @@ i obsługiwane przez std::string (przed zaszyfrowaniem). Wszystkie surowe ciągi
 Każde urządzenie wymaga wgrania swojego unikalnego klucza prywatnego i publicznego oraz klucza publicznego
 certyfikatu producenta.
 
-# Generowanie kluczy:
-Najpierw trzeba mieć klucze producenta. Do stworzenia trzeba użyć
+## Generowanie kluczy:
+1. Najpierw trzeba mieć klucze producenta. Do stworzenia trzeba użyć skryptu z katalogu _firmwares_
 ```
 ./provision_device.sh init-ca
 ```
-z katalogu "firmwares"
 
-Potem trzeba wygenerować klucze dla produktu i podpisać certyfikat urządzenia.
+
+2. Potem trzeba wygenerować klucze dla produktu i podpisać certyfikat urządzenia.
 Do tego potrzebny jest adres mac urządzenia. Gdy już mamy to
-generujemy plik csv obrazu pamięci nieulotnej który zawiera klucze i podpis certyfikatu w ten sposób:
+generujemy plik csv obrazu pamięci nieulotnej który zawiera klucze i podpis certyfikatu.
+Skrypt jest w katalogu _tools_ oprogramowania do light.
 ```
 python3 ./generate_nvs_csv.py --ca_key ../ca/ca_key.pem --mac 70:04:1D:26:2C:B0
 ```
-skrypt jest w katalogu "tools" oprogramowania do light
 
-Teraz plik csv konwertujemy do pliku bin i wgrywamy do urządzenia. Ten etap dzieje się przy wgrywaniu kodu przez
+
+3. Teraz plik csv konwertujemy do pliku bin i wgrywamy do urządzenia. Ten etap dzieje się przy wgrywaniu kodu przez
 platformio ale żeby zadziałało to plik csv należy zmienić nazwę na "nvs_data.csv".
