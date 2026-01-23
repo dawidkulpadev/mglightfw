@@ -74,7 +74,7 @@ constexpr uint32_t hw_type= 1;
 constexpr uint32_t hw_version= 6;
 constexpr uint32_t hw_id= (hw_type<<10) | hw_version;
 // 0000 0100 0000 0110 hw
-//0x0406
+// 0x0406
 
 constexpr uint32_t fw_version= (hw_id << 16) | sw_version;
 

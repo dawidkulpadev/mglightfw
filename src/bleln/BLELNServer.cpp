@@ -42,6 +42,7 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
         if (g_epoch == 0) g_epoch = 1;
     }
     Encryption::randomizer_init();
+    authStore.loadCert();
 
     // Init NimBLE
     NimBLEDevice::init(name);
@@ -247,7 +248,7 @@ void BLELNServer::worker() {
                             Serial.println("BLELNServer - Received clients cert with sign");
                             uint8_t gen;
                             uint8_t fMac[6];
-                            uint8_t fPubKey[BLELN_DEV_KEY_LEN];
+                            uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
 
                             if(authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64)){
                                 cx->setCertData(fMac, fPubKey);

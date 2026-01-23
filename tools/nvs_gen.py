@@ -10,7 +10,7 @@ csv_path = os.path.join(tools_dir, "nvs_data.csv")
 out_bin = os.path.join(tools_dir, "mfg_nvs.bin")
 
 # Rozmiar binarki = rozmiar partycji mfg_nvs z partitions_custom.csv
-NVS_SIZE = "0x6000"
+NVS_SIZE = "0x5000"
 
 def find_nvs_partition_gen():
     # Najczęściej w paczce framework-espidf w: components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py
@@ -34,8 +34,14 @@ def gen_nvs(source, target, env_):
         print(f"ERROR: Brak pliku CSV: {csv_path}")
         env.Exit(1)
 
+    idf_python = os.path.join(
+        ".", "tools", "venv", "bin", "python3"
+    )
+
+    print("Python exe: ", idf_python)
+
     cmd = [
-        sys.executable, gen_py,
+        idf_python, gen_py,
         "generate",
         csv_path,
         out_bin,

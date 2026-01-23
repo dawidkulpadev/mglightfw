@@ -32,7 +32,7 @@ private:
     uint16_t h = 0;
     State s;
 
-    uint8_t pubKey[BLELN_DEV_KEY_LEN]; // Public key of this other device i'm connecting with
+    uint8_t pubKey[BLELN_DEV_PUB_KEY_LEN]; // Public key of this other device i'm connecting with
     uint8_t mac[6]; // and its mac address
     uint8_t testNonce[BLELN_TEST_NONCE_LEN];
 

@@ -6,8 +6,9 @@
 #define MGLIGHTFW_BLELNBASE_H
 
 #define BLELN_TEST_NONCE_LEN        48
-#define BLELN_DEV_KEY_LEN           64
-#define BLELN_MANU_KEY_LEN          64
+#define BLELN_DEV_PUB_KEY_LEN       64
+#define BLELN_DEV_PRIV_KEY_LEN      32
+#define BLELN_MANU_PUB_KEY_LEN      64
 #define BLELN_DEV_SIGN_LEN          64
 #define BLELN_MANU_SIGN_LEN         64
 #define BLELN_NONCE_SIGN_LEN        64

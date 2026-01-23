@@ -12,7 +12,7 @@
 
 class BLELNAuthentication {
 public:
-    bool loadCert(Preferences *prefs);
+    bool loadCert();
     std::string getSignedCert();
     bool verifyCert(const std::string &cert, const std::string &sign, uint8_t *genOut, uint8_t *macOut,
                     int macOutLen, uint8_t *pubKeyOut, int pubKeyOutLen);
@@ -21,9 +21,9 @@ public:
 
 private:
     uint8_t certSign[BLELN_MANU_SIGN_LEN];
-    uint8_t manuPubKey[BLELN_MANU_KEY_LEN];
-    uint8_t myPrivateKey[BLELN_DEV_KEY_LEN];
-    uint8_t myPublicKey[BLELN_DEV_KEY_LEN];
+    uint8_t manuPubKey[BLELN_MANU_PUB_KEY_LEN];
+    uint8_t myPrivateKey[BLELN_DEV_PRIV_KEY_LEN];
+    uint8_t myPublicKey[BLELN_DEV_PUB_KEY_LEN];
 };
 
 #endif //MGLIGHTFW_BLELNAUTHENTICATION_H

@@ -225,8 +225,8 @@ bool Encryption::verifySign_P256_RS(const uint8_t* data, size_t dataLen,
 
 // data - surowe dane do podpisania
 // dataLen - długość tych danych
-// privKeyD - klucz prywatny ECDSA P-256 R||S o długości 64 bajtów
-// privKeyDLen - długość klucza. Tutaj przyjmiemy że zawsze będzie 64 bajty
+// privKeyD - klucz prywatny ECDSA P-256 R||S o długości 32 bajtów
+// privKeyDLen - długość klucza. Tutaj przyjmiemy że zawsze będzie 32 bajty
 // signatureOut - musi być tablicą 64 bajty
 bool Encryption::signData_P256_RS(const uint8_t* data, size_t dataLen,
                                   const uint8_t* privKeyD, size_t privKeyDLen,
@@ -304,17 +304,22 @@ std::string Encryption::base64Encode(uint8_t *data, size_t dlen) {
     size_t olen;
     mbedtls_base64_encode(nullptr, 0, &olen, data, dlen);
 
-    std::string out;
-    out.resize(olen);
-    mbedtls_base64_encode((unsigned char *) out.data(), olen, &olen, data, dlen);
+    char out[olen+1];
+    out[olen]=0;
+
+    if(mbedtls_base64_encode((unsigned char*)out, olen, &olen, data, dlen)){
+       Serial.println("Encryption - base64Encode - failed encoding!");
+    }
 
     return out;
 }
 
 size_t Encryption::base64Decode(const std::string &in, uint8_t *out, size_t outLen) {
     size_t rlen;
-    mbedtls_base64_decode(out, outLen, &rlen,
-                          reinterpret_cast<const unsigned char *>(in.c_str()), in.size());
+    if(mbedtls_base64_decode(out, outLen, &rlen,
+                          reinterpret_cast<const unsigned char *>(in.c_str()), in.size())){
+        Serial.println("Encryption - base64Decode - failed decoding!");
+    }
 
     return rlen;
 }
