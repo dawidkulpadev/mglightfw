@@ -36,8 +36,6 @@ baud = 460800
 ```text
 usage: generate_keys_and_nvs.py [-h] --ca_key CA_KEY --mac MAC [--out OUT] [--config CONFIG]
 
-Key and NVS image generator for ESP32
-
 options:
   -h, --help       show this help message and exit
   --ca_key CA_KEY  Path to ca_key.pem file
