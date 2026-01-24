@@ -2,7 +2,7 @@
 <module version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="Python 3.11" />
+      <configuration sdkName="Python 3.11 virtualenv at ~/ToolBox/projects/MioGiapicco/Software/firmwares/mgairfw-zephyr-workspace/.venv" />
     </facet>
   </component>
 </module>
