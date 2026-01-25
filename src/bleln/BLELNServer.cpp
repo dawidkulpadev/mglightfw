@@ -17,8 +17,8 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
     txMtx = xSemaphoreCreateMutex();
 
     // Initialize queues
-    dataRxQueue = xQueueCreate(20, sizeof(DataRxPacket));
-    keyRxQueue = xQueueCreate(20, sizeof(KeyRxPacket));
+    dataRxQueue = xQueueCreate(20, sizeof(RxPacket));
+    keyRxQueue = xQueueCreate(20, sizeof(RxPacket));
 
     // Start worker thread
     runWorker= true;
@@ -57,15 +57,15 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
 
     // Create BLELN service and characteristics
     auto* svc = srv->createService(serviceUUID);
-    chKeyExTx = svc->createCharacteristic(BLELNBase::KEYEX_TX_UUID, NIMBLE_PROPERTY::NOTIFY);
-    chKeyExRx = svc->createCharacteristic(BLELNBase::KEYEX_RX_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
-    chDataTx  = svc->createCharacteristic(BLELNBase::DATA_TX_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);// | NIMBLE_PROPERTY::READ_ENC);
-    chDataRx  = svc->createCharacteristic(BLELNBase::DATA_RX_UUID,  NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+    chKeyToCli = svc->createCharacteristic(BLELNBase::KEY_TO_CLI_UUID, NIMBLE_PROPERTY::NOTIFY);
+    chKeyToSer = svc->createCharacteristic(BLELNBase::KEY_TO_SER_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+    chDataToCli  = svc->createCharacteristic(BLELNBase::DATA_TO_CLI_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);// | NIMBLE_PROPERTY::READ_ENC);
+    chDataToSer  = svc->createCharacteristic(BLELNBase::DATA_TO_SER_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
 
     // Set characteristics callbacks
-    chKeyExTx->setCallbacks(new KeyExTxClb(this));
-    chKeyExRx->setCallbacks(new KeyExRxClb(this));
-    chDataRx->setCallbacks(new DataRxClb(this));
+    chKeyToCli->setCallbacks(new KeyTxClb(this));
+    chKeyToSer->setCallbacks(new KeyRxClb(this));
+    chDataToSer->setCallbacks(new DataRxClb(this));
 
     // Start BLELN service
     svc->start();
@@ -98,12 +98,12 @@ void BLELNServer::stop() {
     }
 
     // Remove callbacks
-    if (chKeyExTx)
-        chKeyExTx->setCallbacks(nullptr);
-    if (chKeyExRx)
-        chKeyExRx->setCallbacks(nullptr);
-    if (chDataRx)
-        chDataRx ->setCallbacks(nullptr);
+    if (chKeyToCli)
+        chKeyToCli->setCallbacks(nullptr);
+    if (chKeyToSer)
+        chKeyToSer->setCallbacks(nullptr);
+    if (chDataToSer)
+        chDataToSer ->setCallbacks(nullptr);
 
     // Clear semaphores
     if(clisMtx){
@@ -119,10 +119,10 @@ void BLELNServer::stop() {
     connCtxs.clear();
 
     // Reset pointer and callback
-    chKeyExTx = nullptr;
-    chKeyExRx = nullptr;
-    chDataTx  = nullptr;
-    chDataRx  = nullptr;
+    chKeyToCli = nullptr;
+    chKeyToSer = nullptr;
+    chDataToCli  = nullptr;
+    chDataToSer  = nullptr;
     srv       = nullptr;
     onMsgReceived = nullptr;
 
@@ -173,8 +173,8 @@ bool BLELNServer::sendEncrypted(BLELNConnCtx *cx, const std::string &msg) {
     }
 
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chDataTx->setValue(encrypted);
-        chDataTx->notify(cx->getHandle());
+        chDataToCli->setValue(encrypted);
+        chDataToCli->notify(cx->getHandle());
         xSemaphoreGive(clisMtx);
     } else {
         Serial.println("Failed locking semaphore! (Send challenge sign)");
@@ -214,7 +214,7 @@ void BLELNServer::worker() {
         }
 
         // Check key queue
-        KeyRxPacket keyPkt{};
+        RxPacket keyPkt{};
         if(xQueueReceive(keyRxQueue, &keyPkt, 0)==pdTRUE){
             // If new key message received
             BLELNConnCtx *cx;
@@ -313,7 +313,7 @@ void BLELNServer::worker() {
         }
 
         // Check data queue
-        DataRxPacket dataPkt{};
+        RxPacket dataPkt{};
         if (xQueueReceive(dataRxQueue, &dataPkt, 0) == pdTRUE) {
             // If new data message in queue
             BLELNConnCtx *cx;
@@ -349,8 +349,23 @@ void BLELNServer::worker() {
         }
     }
 
-    // TODO: Cleanup queues
+    worker_cleanup();
 }
+
+void BLELNServer::worker_cleanup() {
+    RxPacket pkt{};
+    while (xQueueReceive(dataRxQueue, &pkt, 0) == pdPASS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        free(pkt.buf);
+    }
+
+    while (xQueueReceive(keyRxQueue, &pkt, 0) == pdPASS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        free(pkt.buf);
+    }
+}
+
+
 /// *************** PRIVATE - Methods ***************
 
 bool BLELNServer::sendEncrypted(int i, const std::string &msg) {
@@ -374,8 +389,8 @@ void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
     keyex.append((const char*)cx->getSessionEnc()->getMyNonce(),12);
 
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(keyex);
-        chKeyExTx->notify(cx->getHandle());
+        chKeyToCli->setValue(keyex);
+        chKeyToCli->notify(cx->getHandle());
         cx->setState(BLELNConnCtx::State::WaitingForKey);
         xSemaphoreGive(clisMtx);
     } else {
@@ -388,8 +403,13 @@ void BLELNServer::sendCertToClient(BLELNConnCtx *cx) {
     msg.append(",").append(authStore.getSignedCert());
 
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
+        std::string encMsg;
+        if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
+            chKeyToCli->setValue(encMsg);
+            chKeyToCli->notify(cx->getHandle());
+        } else {
+            Serial.println("BLELNServer - failed encrypting cert msg");
+        }
         xSemaphoreGive(clisMtx);
     } else {
         Serial.println("Failed locking semaphore! (Send cert to client)");
@@ -406,8 +426,13 @@ void BLELNServer::sendChallengeNonce(BLELNConnCtx *cx) {
     msg.append(",").append(base64Nonce);
 
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
+        std::string encMsg;
+        if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
+            chKeyToCli->setValue(encMsg);
+            chKeyToCli->notify(cx->getHandle());
+        } else {
+            Serial.println("BLELNServer - failed encrypting cert msg");
+        }
         xSemaphoreGive(clisMtx);
     } else {
         Serial.println("Failed locking semaphore! (Send challenge nonce)");
@@ -420,8 +445,13 @@ void BLELNServer::sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign) {
     msg.append(",").append(base64Sign);
 
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
-        chKeyExTx->setValue(msg);
-        chKeyExTx->notify(cx->getHandle());
+        std::string encMsg;
+        if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
+            chKeyToCli->setValue(encMsg);
+            chKeyToCli->notify(cx->getHandle());
+        } else {
+            Serial.println("BLELNServer - failed encrypting cert msg");
+        }
         xSemaphoreGive(clisMtx);
     } else {
         Serial.println("Failed locking semaphore! (Send challenge sign)");
@@ -442,7 +472,7 @@ void BLELNServer::appendToDataQueue(uint16_t h, const std::string &m) {
     if (!heapBuf) return;
     memcpy(heapBuf, m.data(), m.size());
 
-    DataRxPacket pkt{h, m.size(), heapBuf };
+    RxPacket pkt{h, m.size(), heapBuf };
     if (xQueueSend(dataRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
     }
@@ -453,7 +483,7 @@ void BLELNServer::appendToKeyQueue(uint16_t h, const std::string &m) {
     if (!heapBuf) return;
     memcpy(heapBuf, m.data(), m.size());
 
-    KeyRxPacket pkt{h, m.size(), heapBuf };
+    RxPacket pkt{h, m.size(), heapBuf };
     if (xQueueSend(keyRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
     }
@@ -544,7 +574,7 @@ void BLELNServer::onDataWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
     appendToDataQueue(info.getConnHandle(), v);
 }
 
-void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
+void BLELNServer::onKeyToSerWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) {
     BLELNConnCtx *cx;
     if(!getConnContext(info.getConnHandle(), &cx)){
         Serial.println("Failed locking semaphore! (onWrite)");
@@ -563,7 +593,7 @@ void BLELNServer::onKeyExRxWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) 
     appendToKeyQueue(info.getConnHandle(), v);
 }
 
-void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
+void BLELNServer::onKeyToCliSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) {
     if(subValue>0) {
         Serial.println("Client subscribed for KeyTX");
         BLELNConnCtx *cx;
@@ -580,3 +610,5 @@ void BLELNServer::onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimB
 void BLELNServer::setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb) {
     onMsgReceived= std::move(cb);
 }
+
+

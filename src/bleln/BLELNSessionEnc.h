@@ -20,6 +20,9 @@ public:
 
     uint8_t* getMyPub();
     uint8_t* getMyNonce();
+
+    static void bytes_to_hex(const uint8_t *src, size_t src_len, char *dest);
+    void printInfo();
 private:
     // Connection encryption
     uint16_t sid = 0;
@@ -37,7 +40,6 @@ private:
     // Friend data
     uint8_t sessKey_f2m[32]{};   // AES-256-GCM key
     uint32_t friendsLastCtr = 0;    // anty-replay
-    uint8_t friendsNonce[12]{};
 };
 
 

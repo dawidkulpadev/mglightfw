@@ -19,13 +19,21 @@
 #define BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW             "$CHRA"
 #define BLELN_MSG_TITLE_AUTH_OK                             "$AUOK"
 
+#include "Arduino.h"
+
+struct RxPacket {
+    uint16_t conn;
+    size_t   len;
+    uint8_t *buf;    // malloc/free
+};
+
 class BLELNBase {
 public:
     static const char* SERVICE_UUID;
-    static const char* KEYEX_TX_UUID;
-    static const char* KEYEX_RX_UUID;
-    static const char* DATA_TX_UUID;
-    static const char* DATA_RX_UUID;
+    static const char* KEY_TO_CLI_UUID;
+    static const char* KEY_TO_SER_UUID;
+    static const char* DATA_TO_CLI_UUID;
+    static const char* DATA_TO_SER_UUID;
 };
 
 

@@ -17,17 +17,7 @@
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 
-struct DataRxPacket {
-    uint16_t conn;
-    size_t   len;
-    uint8_t *buf;    // malloc/free
-};
 
-struct KeyRxPacket {
-    uint16_t conn;
-    size_t len;
-    uint8_t *buf; // malloc/free
-};
 
 class BLELNServer : public NimBLEScanCallbacks, public NimBLEServerCallbacks{
 public:
@@ -45,13 +35,14 @@ public:
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
 
     void worker();
+    void worker_cleanup();
 private:
     // Intefaces
     std::function<void(uint16_t cliH, const std::string& msg)> onMsgReceived;
 
     // NimBLE
     NimBLEServer* srv = nullptr;
-    NimBLECharacteristic *chKeyExTx=nullptr, *chKeyExRx=nullptr, *chDataTx=nullptr, *chDataRx=nullptr;
+    NimBLECharacteristic *chKeyToCli=nullptr, *chKeyToSer=nullptr, *chDataToCli=nullptr, *chDataToSer=nullptr;
 
     // Multithreading
     SemaphoreHandle_t clisMtx = nullptr;
@@ -92,8 +83,8 @@ private:
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override;
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
     void onDataWrite(NimBLECharacteristic* c, NimBLEConnInfo& info);
-    void onKeyExRxWrite(NimBLECharacteristic* c, NimBLEConnInfo& info);
-    void onKeyExTxSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue);
+    void onKeyToSerWrite(NimBLECharacteristic* c, NimBLEConnInfo& info);
+    void onKeyToCliSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue);
 
     // Callback classes
     class DataRxClb : public NimBLECharacteristicCallbacks{
@@ -106,23 +97,23 @@ private:
         }
     };
 
-    class KeyExRxClb : public NimBLECharacteristicCallbacks {
+    class KeyRxClb : public NimBLECharacteristicCallbacks {
     public:
-        explicit KeyExRxClb(BLELNServer *parent): parentServer(parent){}
+        explicit KeyRxClb(BLELNServer *parent): parentServer(parent){}
     private:
         BLELNServer *parentServer;
         void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override{
-            parentServer->onKeyExRxWrite(c, info);
+            parentServer->onKeyToSerWrite(c, info);
         }
     };
 
-    class KeyExTxClb : public NimBLECharacteristicCallbacks {
+    class KeyTxClb : public NimBLECharacteristicCallbacks {
     public:
-        explicit KeyExTxClb(BLELNServer *parent): parentServer(parent){}
+        explicit KeyTxClb(BLELNServer *parent): parentServer(parent){}
     private:
         BLELNServer *parentServer;
         void onSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue) override{
-            parentServer->onKeyExTxSubscribe(pCharacteristic, connInfo, subValue);
+            parentServer->onKeyToCliSubscribe(pCharacteristic, connInfo, subValue);
         }
     };
 };

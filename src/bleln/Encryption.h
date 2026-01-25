@@ -31,11 +31,11 @@ public:
     static bool encryptAESGCM(const std::string *in, uint8_t *iv, uint8_t *tag,
                               uint8_t *aad, std::string *out, uint8_t *key);
 
-    static bool signData_P256_RS(const uint8_t* data, size_t dataLen,
-                                 const uint8_t* privKeyD, size_t privKeyDLen,
-                                 uint8_t* signatureOut, size_t sigOutLen);
-    static bool verifySign_P256_RS(const uint8_t* data, size_t dataLen, const uint8_t* signature, size_t sigLen,
-                                   const uint8_t* pubKeyRaw, size_t pubKeyLen);
+    static bool signData_ECDSA_P256(const uint8_t* data, size_t dataLen,
+                                    const uint8_t* privKeyD, size_t privKeyDLen,
+                                    uint8_t* signatureOut, size_t sigOutLen);
+    static bool verifySign_ECDSA_P256(const uint8_t* data, size_t dataLen, const uint8_t* signature, size_t sigLen,
+                                      const uint8_t* pubKeyRaw, size_t pubKeyLen);
 
 private:
     static bool rngInitialised;

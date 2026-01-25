@@ -8,11 +8,9 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include "BLELNSessionEnc.h"
+#include "BLELNConnCtx.h"
+#include "BLELNAuthentication.h"
 
-struct RxClientPacket {
-    size_t   len;
-    uint8_t* buf;    // malloc/free
-};
 
 class BLELNClient : public NimBLEScanCallbacks, public NimBLEClientCallbacks{
 public:
@@ -21,7 +19,7 @@ public:
     void startServerSearch(uint32_t durationMs, const std::string &serverUUID, const std::function<void(const NimBLEAdvertisedDevice *advertisedDevice)>& onResult);
     void beginConnect(const NimBLEAdvertisedDevice *advertisedDevice, const std::function<void(bool, int)> &onConnectResult);
     bool sendEncrypted(const std::string& msg);
-    void disconnect();
+    void disconnect(uint8_t reason=BLE_ERR_REM_USER_CONN_TERM);
 
     bool isScanning() const;
     bool isConnected();
@@ -37,23 +35,24 @@ public:
     void onDisconnect(NimBLEClient* pClient, int reason) override;
 
     void rxWorker();
-    void appendToQueue(const std::string &m);
+    static void appendToQueue(const uint8_t *m, size_t mlen, QueueHandle_t *queue);
 
     void onPassKeyEntry(NimBLEConnInfo& connInfo) override;
-
-    bool discover();
-    bool handshake();
-
-
 private:
-    void onKeyExNotifyClb(__attribute__((unused)) NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length,
-                          __attribute__((unused)) bool isNotify);
-    void onServerResponse(NimBLERemoteCharacteristic* pBLERemoteCharacteristic, __attribute__((unused)) uint8_t* pData,
-                          __attribute__((unused)) size_t length, __attribute__((unused)) bool isNotify);
+    void sendCertToServer(BLELNConnCtx *cx);
+    void sendChallengeNonce(BLELNConnCtx *cx);
+    void sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign);
+    bool discover();
+    bool handshake(uint8_t *v, size_t vlen);
+
+    void onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length,
+                       __attribute__((unused)) bool isNotify);
+    void onDataTxNotify(NimBLERemoteCharacteristic* pBLERemoteCharacteristic, __attribute__((unused)) uint8_t* pData,
+                        __attribute__((unused)) size_t length, __attribute__((unused)) bool isNotify);
 
     NimBLEClient* client=nullptr;
     NimBLERemoteService* svc=nullptr;
-    NimBLERemoteCharacteristic *chKeyExTx=nullptr,*chKeyExRx=nullptr,*chDataTx=nullptr,*chDataRx=nullptr;
+    NimBLERemoteCharacteristic *chKeyToCli=nullptr,*chKeyToSer=nullptr,*chDataToCli=nullptr,*chDataToSer=nullptr;
 
     bool scanning = false;
     std::function<void(const NimBLEAdvertisedDevice *advertisedDevice)> onScanResult;
@@ -61,14 +60,15 @@ private:
 
     std::function<void(const std::string&)> onMsgRx;
     std::function<void(bool, int)> onConRes;
-    bool runRxWorker=false;
 
-    QueueHandle_t g_rxQueue;
+    QueueHandle_t dataRxQueue;
+    QueueHandle_t keyRxQueue;
 
-    volatile bool g_keyexReady = false;
-    std::string   g_keyexPayload;
+    BLELNConnCtx *connCtx= nullptr;
+    BLELNAuthentication authStore;
+    SemaphoreHandle_t connMtx = nullptr;
 
-    BLELNSessionEnc sessionEnc;
+    bool runWorker=false;
 };
 
 

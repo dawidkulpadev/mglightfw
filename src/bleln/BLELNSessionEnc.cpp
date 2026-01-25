@@ -32,7 +32,7 @@ bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
     salt[35] = (uint8_t)((g_epoch >> 24) & 0xFF);
 
     // info = "BLEv1|sess" + srvPub + cliPub + srvNonce + cliNonce
-    const char infoHdr_c2s[] = "BLEv1|sessKey_c2s";
+    const char infoHdr_c2s[] = "BLEv1|sessKey_f2m";
     uint8_t info_c2s[ sizeof(infoHdr_c2s)-1 + 65 + 65 + 12 + 12 ];
     uint8_t* p_c2s = info_c2s;
     memcpy(p_c2s, infoHdr_c2s, sizeof(infoHdr_c2s)-1); p_c2s += sizeof(infoHdr_c2s)-1;
@@ -45,7 +45,7 @@ bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
                             sessKey_f2m, 32);
 
     // info = "BLEv1|sess" + srvPub + cliPub + srvNonce + cliNonce
-    const char infoHdr_s2c[] = "BLEv1|sessKey_s2c";
+    const char infoHdr_s2c[] = "BLEv1|sessKey_m2f";
     uint8_t info_s2c[sizeof(infoHdr_s2c) - 1 + 65 + 65 + 12 + 12 ];
     uint8_t* p_s2c = info_s2c;
     memcpy(p_s2c, infoHdr_s2c, sizeof(infoHdr_s2c) - 1); p_s2c += sizeof(infoHdr_s2c) - 1;
@@ -65,10 +65,11 @@ bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
                             sidBuf, sizeof(sidBuf));
     sid = ((uint16_t)sidBuf[0] << 8) | sidBuf[1];
 
-
     myLastCtr = 0;
     friendsLastCtr = 0;
     epoch = g_epoch;
+
+    printInfo();
 
     return true;
 }
@@ -160,4 +161,34 @@ uint8_t *BLELNSessionEnc::getMyNonce() {
 
 uint16_t BLELNSessionEnc::getSessionId() {
     return sid;
+}
+
+void BLELNSessionEnc::bytes_to_hex(const uint8_t *src, size_t src_len, char *dest) {
+    // Tablica znaków dla szybkiego dostępu (bez obliczeń matematycznych)
+    const char hex_map[] = "0123456789ABCDEF";
+
+    for (size_t i = 0; i < src_len; i++) {
+        uint8_t byte = src[i];
+
+        // Pobierz starsze 4 bity (high nibble) i przekształć na znak
+        dest[i * 2] = hex_map[(byte >> 4) & 0x0F];
+
+        // Pobierz młodsze 4 bity (low nibble) i przekształć na znak
+        dest[i * 2 + 1] = hex_map[byte & 0x0F];
+    }
+
+    // Dodaj znak końca łańcucha (null-terminator), aby 'dest' był poprawnym C-stringiem
+    dest[src_len * 2] = '\0';
+}
+
+void BLELNSessionEnc::printInfo() {
+    Serial.printf("Session id: %d, epoch: %d\r\n", sid, epoch);
+
+    char m2f[65];
+    char f2m[65];
+    bytes_to_hex(sessKey_m2f, 32, m2f);
+    bytes_to_hex(sessKey_f2m, 32, f2m);
+
+    Serial.printf("m2f: %s\r\n", m2f);
+    Serial.printf("f2m: %s\r\n", f2m);
 }

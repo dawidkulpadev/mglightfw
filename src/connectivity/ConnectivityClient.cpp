@@ -65,22 +65,7 @@ void ConnectivityClient::loop() {
             lastServerCheck= millis();
         }
     } else if(state == State::ServerConnecting) {
-        if(blelnClient.isConnected()) {
-            if (!blelnClient.hasDiscoveredClient()) {
-                if (!blelnClient.discover()) {
-                    Serial.println("Client mode - discover fail");
-                    state = State::ServerConnectFailed;
-                } else {
-                    if (!blelnClient.handshake()) {
-                        Serial.println("Client mode - handshake fail");
-                        state = State::ServerConnectFailed;
-                    } else {
-                        Serial.println("Client mode - handshake OK");
-                        // cmState set to ServerConnected in message received callback when HDSH received
-                    }
-                }
-            }
-        }
+
     } else if(state == State::ServerConnected){
         if(connectedFor == ConnectedFor::APITalk){
             char buf[128];

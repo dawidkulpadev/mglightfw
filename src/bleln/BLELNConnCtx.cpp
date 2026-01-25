@@ -51,7 +51,7 @@ void BLELNConnCtx::setTestNonce(uint8_t *nonce) {
 }
 
 bool BLELNConnCtx::verifyChallengeResponseAnswer(uint8_t *nonceSign) {
-    return Encryption::verifySign_P256_RS(testNonce, BLELN_TEST_NONCE_LEN, nonceSign,
-                                          BLELN_DEV_SIGN_LEN, pubKey, BLELN_DEV_PUB_KEY_LEN);
+    return Encryption::verifySign_ECDSA_P256(testNonce, BLELN_TEST_NONCE_LEN, nonceSign,
+                                             BLELN_DEV_SIGN_LEN, pubKey, BLELN_DEV_PUB_KEY_LEN);
 }
 

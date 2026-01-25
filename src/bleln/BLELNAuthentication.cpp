@@ -60,8 +60,8 @@ bool BLELNAuthentication::verifyCert(const std::string &cert, const std::string 
                                      int macOutLen, uint8_t *pubKeyOut, int pubKeyOutLen) {
     uint8_t signRaw[BLELN_MANU_SIGN_LEN];
     Encryption::base64Decode(sign, signRaw, BLELN_MANU_SIGN_LEN);
-    bool r= Encryption::verifySign_P256_RS(reinterpret_cast<const uint8_t *>(cert.data()), cert.length(),
-                                           signRaw, BLELN_MANU_SIGN_LEN, manuPubKey, BLELN_MANU_PUB_KEY_LEN);
+    bool r= Encryption::verifySign_ECDSA_P256(reinterpret_cast<const uint8_t *>(cert.data()), cert.length(),
+                                              signRaw, BLELN_MANU_SIGN_LEN, manuPubKey, BLELN_MANU_PUB_KEY_LEN);
 
     if((macOutLen < 6) or (pubKeyOutLen < BLELN_DEV_PUB_KEY_LEN)){
         return false;
@@ -90,11 +90,11 @@ bool BLELNAuthentication::verifyCert(const std::string &cert, const std::string 
 }
 
 void BLELNAuthentication::signData(std::string &d, uint8_t *out) {
-    Encryption::signData_P256_RS((const uint8_t *) d.data(), d.size(),
-                                 myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
+    Encryption::signData_ECDSA_P256((const uint8_t *) d.data(), d.size(),
+                                    myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
 }
 
 void BLELNAuthentication::signData(const uint8_t *d, size_t dlen, uint8_t *out) {
-    Encryption::signData_P256_RS(d, dlen,
-                                 myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
+    Encryption::signData_ECDSA_P256(d, dlen,
+                                    myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
 }

@@ -95,6 +95,10 @@ void printHello(){
     Serial.println("This is free software, and you are welcome to redistribute it under certain conditions;");
     Serial.println("You should have received a copy of the GNU General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.");
     Serial.printf("Hardware code: %d, Firmware code: %d\r\n", hw_id, fw_version);
+
+    uint64_t fmac= ESP.getEfuseMac();
+    uint8_t *mac= reinterpret_cast<uint8_t *>(&fmac);
+    Serial.printf("Adres MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 #define FACTORY_RESET_BLINKS_CNT  6
