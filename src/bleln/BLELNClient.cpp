@@ -33,7 +33,7 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
                 static_cast<BLELNClient*>(arg)->rxWorker();
                 vTaskDelete(nullptr);
             },
-            "BLELNrx", 3072, this, 5, nullptr, 1);
+            "BLELNrx", 4096, this, 5, nullptr, 1);
 }
 
 void BLELNClient::stop() {
@@ -376,7 +376,7 @@ void BLELNClient::onConnectFail(NimBLEClient *pClient, int reason) {
 
 
 void BLELNClient::disconnect(uint8_t reason) {
-    Serial.printf("BLELNClient - diconneting: %d", reason);
+    Serial.printf("BLELNClient - diconneting: %d\r\n", reason);
     chKeyToCli->unsubscribe();
     chDataToCli->unsubscribe();
 

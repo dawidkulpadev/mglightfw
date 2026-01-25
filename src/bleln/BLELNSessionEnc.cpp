@@ -4,6 +4,7 @@
 
 #include "BLELNSessionEnc.h"
 #include "Encryption.h"
+#include "BLELNBase.h"
 
 bool BLELNSessionEnc::makeMyKeys() {
     if(!Encryption::ecdh_gen(myPub,grp,d)){
@@ -15,46 +16,46 @@ bool BLELNSessionEnc::makeMyKeys() {
     return true;
 }
 
-bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
-                                    const uint8_t *clientNonce12, uint8_t *g_psk_salt, uint32_t g_epoch) {
+bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *friendsPub65,
+                                       const uint8_t *friendsNonce12, uint8_t *psk_salt, uint32_t sessionEpoch) {
     // ECDH -> shared
     uint8_t ss[32];
-    if(!Encryption::ecdh_shared(grp,d,myPub,ss)){
+    if(!Encryption::ecdh_shared(grp, d, friendsPub65, ss)){
         return false;
     }
 
     // HKDF: salt = PSK_SALT || epoch (LE)
     uint8_t salt[32+4];
-    memcpy(salt, g_psk_salt, 32);
-    salt[32] = (uint8_t)(g_epoch & 0xFF);
-    salt[33] = (uint8_t)((g_epoch >> 8) & 0xFF);
-    salt[34] = (uint8_t)((g_epoch >> 16) & 0xFF);
-    salt[35] = (uint8_t)((g_epoch >> 24) & 0xFF);
+    memcpy(salt, psk_salt, 32);
+    salt[32] = (uint8_t)(sessionEpoch & 0xFF);
+    salt[33] = (uint8_t)((sessionEpoch >> 8) & 0xFF);
+    salt[34] = (uint8_t)((sessionEpoch >> 16) & 0xFF);
+    salt[35] = (uint8_t)((sessionEpoch >> 24) & 0xFF);
 
     // info = "BLEv1|sess" + srvPub + cliPub + srvNonce + cliNonce
-    const char infoHdr_c2s[] = "BLEv1|sessKey_f2m";
-    uint8_t info_c2s[ sizeof(infoHdr_c2s)-1 + 65 + 65 + 12 + 12 ];
-    uint8_t* p_c2s = info_c2s;
-    memcpy(p_c2s, infoHdr_c2s, sizeof(infoHdr_c2s)-1); p_c2s += sizeof(infoHdr_c2s)-1;
-    memcpy(p_c2s, myPub, 65); p_c2s += 65;
-    memcpy(p_c2s, clientPub65, 65); p_c2s += 65;
-    memcpy(p_c2s, myNonce, 12); p_c2s += 12;
-    memcpy(p_c2s, clientNonce12, 12); p_c2s += 12;
-    auto infoLen_c2s = (size_t)(p_c2s - info_c2s);
-    Encryption::hkdf_sha256(salt, sizeof(salt), ss, sizeof(ss), info_c2s, infoLen_c2s,
+    const char infoHdr_f2m[] = "BLEv1|sessKey";
+    uint8_t info_f2m[ sizeof(infoHdr_f2m)-1 + 65 + 65 + 12 + 12 ];
+    uint8_t* p_f2m = info_f2m;
+    memcpy(p_f2m, infoHdr_f2m, sizeof(infoHdr_f2m)-1);  p_f2m += sizeof(infoHdr_f2m)-1;
+    memcpy(p_f2m, myPub, 65);                           p_f2m += 65;
+    memcpy(p_f2m, friendsPub65, 65);                    p_f2m += 65;
+    memcpy(p_f2m, myNonce, 12);                         p_f2m += 12;
+    memcpy(p_f2m, friendsNonce12, 12);                  p_f2m += 12;
+    auto infoLen_f2m = (size_t)(p_f2m - info_f2m);
+    Encryption::hkdf_sha256(salt, sizeof(salt), ss, sizeof(ss), info_f2m, infoLen_f2m,
                             sessKey_f2m, 32);
 
     // info = "BLEv1|sess" + srvPub + cliPub + srvNonce + cliNonce
-    const char infoHdr_s2c[] = "BLEv1|sessKey_m2f";
-    uint8_t info_s2c[sizeof(infoHdr_s2c) - 1 + 65 + 65 + 12 + 12 ];
-    uint8_t* p_s2c = info_s2c;
-    memcpy(p_s2c, infoHdr_s2c, sizeof(infoHdr_s2c) - 1); p_s2c += sizeof(infoHdr_s2c) - 1;
-    memcpy(p_s2c, myPub, 65); p_s2c += 65;
-    memcpy(p_s2c, clientPub65, 65); p_s2c += 65;
-    memcpy(p_s2c, myNonce, 12); p_s2c += 12;
-    memcpy(p_s2c, clientNonce12, 12); p_s2c += 12;
-    auto infoLen_s2c = (size_t)(p_s2c - info_s2c);
-    Encryption::hkdf_sha256(salt, sizeof(salt), ss, sizeof(ss), info_s2c, infoLen_s2c,
+    const char infoHdr_m2f[] = "BLEv1|sessKey";
+    uint8_t info_m2f[sizeof(infoHdr_m2f) - 1 + 65 + 65 + 12 + 12 ];
+    uint8_t* p_m2f = info_m2f;
+    memcpy(p_m2f, infoHdr_m2f, sizeof(infoHdr_m2f) - 1); p_m2f += sizeof(infoHdr_m2f) - 1;
+    memcpy(p_m2f, friendsPub65, 65); p_m2f += 65;
+    memcpy(p_m2f, myPub, 65); p_m2f += 65;
+    memcpy(p_m2f, friendsNonce12, 12); p_m2f += 12;
+    memcpy(p_m2f, myNonce, 12); p_m2f += 12;
+    auto infoLen_m2f = (size_t)(p_m2f - info_m2f);
+    Encryption::hkdf_sha256(salt, sizeof(salt), ss, sizeof(ss), info_m2f, infoLen_m2f,
                             sessKey_m2f, 32);
 
     uint8_t sidBuf[2];
@@ -67,9 +68,7 @@ bool BLELNSessionEnc::deriveFriendsKey(const uint8_t *clientPub65,
 
     myLastCtr = 0;
     friendsLastCtr = 0;
-    epoch = g_epoch;
-
-    printInfo();
+    myEpoch = sessionEpoch;
 
     return true;
 }
@@ -100,10 +99,10 @@ bool BLELNSessionEnc::decryptMessage(const uint8_t *in, size_t inLen, std::strin
     memcpy(a, aadhdr, sizeof(aadhdr)-1); a += sizeof(aadhdr)-1;
     *a++ = (uint8_t)(sid >> 8);
     *a++ = (uint8_t)(sid & 0xFF);
-    *a++ = (uint8_t)(epoch & 0xFF);
-    *a++ = (uint8_t)((epoch >> 8) & 0xFF);
-    *a++ = (uint8_t)((epoch >> 16) & 0xFF);
-    *a = (uint8_t)((epoch >> 24) & 0xFF);
+    *a++ = (uint8_t)(myEpoch & 0xFF);
+    *a++ = (uint8_t)((myEpoch >> 8) & 0xFF);
+    *a++ = (uint8_t)((myEpoch >> 16) & 0xFF);
+    *a = (uint8_t)((myEpoch >> 24) & 0xFF);
 
     if(!Encryption::decryptAESGCM(ct, ctLen, iv, tag, aad, &out, sessKey_f2m)){
         return false;
@@ -121,10 +120,10 @@ bool BLELNSessionEnc::encryptMessage(const std::string &in, std::string &out) {
     a+=sizeof(aadhdr)-1;
     *a++ = (uint8_t)(sid >> 8);
     *a++ = (uint8_t)(sid & 0xFF);
-    *a++ = (uint8_t)(epoch & 0xFF);
-    *a++ = (uint8_t)((epoch >> 8) & 0xFF);
-    *a++ = (uint8_t)((epoch >> 16) & 0xFF);
-    *a   = (uint8_t)((epoch >> 24) & 0xFF);
+    *a++ = (uint8_t)(myEpoch & 0xFF);
+    *a++ = (uint8_t)((myEpoch >> 8) & 0xFF);
+    *a++ = (uint8_t)((myEpoch >> 16) & 0xFF);
+    *a   = (uint8_t)((myEpoch >> 24) & 0xFF);
 
     myLastCtr++;
     uint8_t ctrBE[4] = {
@@ -159,36 +158,6 @@ uint8_t *BLELNSessionEnc::getMyNonce() {
     return myNonce;
 }
 
-uint16_t BLELNSessionEnc::getSessionId() {
+uint16_t BLELNSessionEnc::getSessionId() const {
     return sid;
-}
-
-void BLELNSessionEnc::bytes_to_hex(const uint8_t *src, size_t src_len, char *dest) {
-    // Tablica znaków dla szybkiego dostępu (bez obliczeń matematycznych)
-    const char hex_map[] = "0123456789ABCDEF";
-
-    for (size_t i = 0; i < src_len; i++) {
-        uint8_t byte = src[i];
-
-        // Pobierz starsze 4 bity (high nibble) i przekształć na znak
-        dest[i * 2] = hex_map[(byte >> 4) & 0x0F];
-
-        // Pobierz młodsze 4 bity (low nibble) i przekształć na znak
-        dest[i * 2 + 1] = hex_map[byte & 0x0F];
-    }
-
-    // Dodaj znak końca łańcucha (null-terminator), aby 'dest' był poprawnym C-stringiem
-    dest[src_len * 2] = '\0';
-}
-
-void BLELNSessionEnc::printInfo() {
-    Serial.printf("Session id: %d, epoch: %d\r\n", sid, epoch);
-
-    char m2f[65];
-    char f2m[65];
-    bytes_to_hex(sessKey_m2f, 32, m2f);
-    bytes_to_hex(sessKey_f2m, 32, f2m);
-
-    Serial.printf("m2f: %s\r\n", m2f);
-    Serial.printf("f2m: %s\r\n", f2m);
 }

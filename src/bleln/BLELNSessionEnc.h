@@ -12,21 +12,18 @@
 class BLELNSessionEnc {
 public:
     bool makeMyKeys(); // Initialize with new server keys
-    bool deriveFriendsKey(const uint8_t* clientPub65, const uint8_t* clientNonce12, uint8_t *g_psk_salt, uint32_t g_epoch);
+    bool deriveFriendsKey(const uint8_t* friendsPub65, const uint8_t* friendsNonce12, uint8_t *psk_salt, uint32_t sessionEpoch);
     bool decryptMessage(const uint8_t* in, size_t inLen, std::string &out);
     bool encryptMessage(const std::string &in, std::string &out);
 
-    uint16_t getSessionId();
+    uint16_t getSessionId() const;
 
     uint8_t* getMyPub();
     uint8_t* getMyNonce();
-
-    static void bytes_to_hex(const uint8_t *src, size_t src_len, char *dest);
-    void printInfo();
 private:
     // Connection encryption
     uint16_t sid = 0;
-    uint32_t epoch = 0;
+    uint32_t myEpoch = 0;
 
     // My data
     mbedtls_ecp_group grp{};

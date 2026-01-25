@@ -34,6 +34,8 @@ public:
     static const char* KEY_TO_SER_UUID;
     static const char* DATA_TO_CLI_UUID;
     static const char* DATA_TO_SER_UUID;
+
+    static void bytes_to_hex(const uint8_t *src, size_t src_len);
 };
 
 
