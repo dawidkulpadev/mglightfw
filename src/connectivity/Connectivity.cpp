@@ -34,8 +34,8 @@ void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *
             Serial.println("Connectivity - Recently has been client. Start as client");
             conMode = ConnectivityMode::ClientMode;
         } */
-        Serial.println("Connectivity - Start as client");
-        conMode = ConnectivityMode::ClientMode;
+        Serial.println("[I] Connectivity - Start as client");
+        conMode = ConnectivityMode::ServerMode;
      }
 }
 

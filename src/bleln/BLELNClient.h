@@ -41,7 +41,7 @@ public:
 private:
     void sendCertToServer(BLELNConnCtx *cx);
     void sendChallengeNonce(BLELNConnCtx *cx);
-    void sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign);
+    void sendChallengeNonceSign(BLELNConnCtx *cx, const std::string &nonceB64);
     bool discover();
     bool handshake(uint8_t *v, size_t vlen);
 

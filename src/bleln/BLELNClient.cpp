@@ -144,7 +144,6 @@ bool BLELNClient::discover() {
 /*** Connection context not protected! */
 bool BLELNClient::handshake(uint8_t *v, size_t vlen) {
     if (vlen!=1+4+32+65+12 || (uint8_t)v[0]!=1) {
-        Serial.printf("[HX] bad keyex len=%u\n",(unsigned)vlen);
         return false;
     }
 
@@ -165,7 +164,6 @@ bool BLELNClient::handshake(uint8_t *v, size_t vlen) {
     tx.append((const char*)connCtx->getSessionEnc()->getMyNonce(),12);
 
     if(!chKeyToSer->writeValue(tx, true)){
-        Serial.println("[HX] write fail");
         return false;
     }
 
@@ -244,12 +242,11 @@ void BLELNClient::rxWorker() {
     while(runWorker){
         if(xSemaphoreTake(connMtx, 0)==pdTRUE){
             if(connCtx!= nullptr and connCtx->getState()==BLELNConnCtx::State::New){
-                Serial.println("BLELNClient - new connection detected. Discovering...");
+
                 if(discover()){
-                    Serial.println("BLELNClient - discover success");
                     connCtx->setState(BLELNConnCtx::State::WaitingForKey);
                 } else {
-                    Serial.println("BLELNClient - discover failed");
+                    Serial.println("[E] BLELNClient - discover failed");
                 }
             }
             xSemaphoreGive(connMtx);
@@ -260,19 +257,19 @@ void BLELNClient::rxWorker() {
             if(xSemaphoreTake(connMtx, 0)==pdTRUE){
                 if(connCtx!= nullptr){
                     if(connCtx->getState()==BLELNConnCtx::State::WaitingForKey){
-                        Serial.println("BLELNClient - received session key");
                         if(handshake(keyPkt.buf, keyPkt.len)){
-                            Serial.println("BLELNClient - handshake success");
                             connCtx->setState(BLELNConnCtx::State::WaitingForCert);
+                        } else {
+                            Serial.println("[E] BLELNClient - handshake failed");
+                            disconnect(BLE_ERR_AUTH_FAIL);
+                            connCtx->setState(BLELNConnCtx::State::AuthFailed);
                         }
                     }  else if(connCtx->getState()==BLELNConnCtx::State::WaitingForCert){
                         std::string plainKeyMsg;
-                        Serial.println("BLELNClient - Received message waiihng for cert");
                         if (connCtx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
-                            Serial.println("BLELNClient - decrypt successful");
                             StringList parts= splitCsvRespectingQuotes(plainKeyMsg);
                             if(parts[0]==BLELN_MSG_TITLE_CERT and parts.size()==3){
-                                Serial.println("BLELNClient - Received clients cert with sign");
+
                                 uint8_t gen;
                                 uint8_t fMac[6];
                                 uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
@@ -284,10 +281,10 @@ void BLELNClient::rxWorker() {
                                 } else {
                                     disconnect(BLE_ERR_AUTH_FAIL);
                                     connCtx->setState(BLELNConnCtx::State::AuthFailed);
-                                    Serial.println("BLELNClient - WaitingForCert - invalid cert");
+                                    Serial.println("[E] BLELNClient - WaitingForCert - invalid cert");
                                 }
                             } else {
-                                Serial.println("BLELNClient - WaitingForCert - wrong message");
+                                Serial.println("[E] BLELNClient - WaitingForCert - wrong message");
                                 disconnect(BLE_ERR_AUTH_FAIL);
                                 connCtx->setState(BLELNConnCtx::State::AuthFailed);
                             }
@@ -298,12 +295,49 @@ void BLELNClient::rxWorker() {
                     } else if(connCtx->getState()==BLELNConnCtx::State::ChallengeResponseCli) {
                         std::string plainKeyMsg;
                         if (connCtx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
-
+                            StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
+                            if (parts[0] == BLELN_MSG_TITLE_CHALLENGE_RESPONSE_NONCE and parts.size() == 2) {
+                                sendChallengeNonceSign(connCtx, parts[1]);
+                                connCtx->setState(BLELNConnCtx::State::ChallengeResponseSer);
+                            } else {
+                                disconnect(BLE_ERR_AUTH_FAIL);
+                                connCtx->setState(BLELNConnCtx::State::AuthFailed);
+                            }
                         } else {
                             disconnect(BLE_ERR_AUTH_FAIL);
                             connCtx->setState(BLELNConnCtx::State::AuthFailed);
                         }
-                        // TODO: Receive servers nonce to sign
+                    } else if(connCtx->getState()==BLELNConnCtx::State::ChallengeResponseSer) {
+                        std::string plainKeyMsg;
+                        if (connCtx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
+                            StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
+                            if (parts[0] == BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW and parts.size() == 2) {
+                                uint8_t nonceSign[BLELN_NONCE_SIGN_LEN];
+                                Encryption::base64Decode(parts[1], nonceSign, BLELN_NONCE_SIGN_LEN);
+                                if(connCtx->verifyChallengeResponseAnswer(nonceSign)){
+                                    std::string msg=BLELN_MSG_TITLE_AUTH_OK;
+                                    msg.append(",1");
+                                    std::string encMsg;
+                                    if(connCtx->getSessionEnc()->encryptMessage(msg, encMsg)) {
+                                        Serial.println("[D] BLELNClient - auth success");
+                                        Serial.printf("[D] BLELNClient - client %d live for %d ms\r\n", connCtx->getHandle(), connCtx->getTimeOfLife());
+                                        chKeyToSer->writeValue(encMsg, true);
+                                    } else {
+                                        Serial.println("[E] BLELNClient - failed encrypting cert msg");
+                                    }
+                                } else {
+                                    Serial.println("[E] BLELNClient - ChallengeResponseSeri - invalid sign");
+                                    disconnect(BLE_ERR_AUTH_FAIL);
+                                    connCtx->setState(BLELNConnCtx::State::AuthFailed);
+                                }
+                            } else {
+                                disconnect(BLE_ERR_AUTH_FAIL);
+                                connCtx->setState(BLELNConnCtx::State::AuthFailed);
+                            }
+                        } else {
+                            disconnect(BLE_ERR_AUTH_FAIL);
+                            connCtx->setState(BLELNConnCtx::State::AuthFailed);
+                        }
                     }
                 }
                 xSemaphoreGive(connMtx);
@@ -353,7 +387,7 @@ void BLELNClient::onConnect(NimBLEClient *pClient) {
     if(onConRes){
         onConRes(true, 0);
     }
-    Serial.println("Client connected");
+    Serial.println("[D] BLELNClient - Client connected");
     if(xSemaphoreTake(connMtx, pdMS_TO_TICKS(1000))==pdTRUE){
         connCtx= new BLELNConnCtx(pClient->getConnHandle());
         xSemaphoreGive(connMtx);
@@ -376,7 +410,7 @@ void BLELNClient::onConnectFail(NimBLEClient *pClient, int reason) {
 
 
 void BLELNClient::disconnect(uint8_t reason) {
-    Serial.printf("BLELNClient - diconneting: %d\r\n", reason);
+    Serial.printf("[D] BLELNClient - disconnected, reason: %d\r\n", reason);
     chKeyToCli->unsubscribe();
     chDataToCli->unsubscribe();
 
@@ -394,7 +428,7 @@ void BLELNClient::disconnect(uint8_t reason) {
 void BLELNClient::sendChallengeNonce(BLELNConnCtx *cx) {
     uint8_t nonce[BLELN_TEST_NONCE_LEN];
     Encryption::random_bytes(nonce, BLELN_TEST_NONCE_LEN);
-    cx->setTestNonce(nonce);
+    //cx->generateTestNonce(nonce);
     std::string base64Nonce= Encryption::base64Encode(nonce, BLELN_TEST_NONCE_LEN);
 
     std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_NONCE;
@@ -404,20 +438,33 @@ void BLELNClient::sendChallengeNonce(BLELNConnCtx *cx) {
     if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
         chKeyToSer->writeValue(encMsg, true);
     } else {
-        Serial.println("BLELNClient - failed encrypting cert msg");
+        Serial.println("[E] BLELNClient - failed encrypting cert msg");
     }
 }
 
-void BLELNClient::sendChallengeNonceSign(BLELNConnCtx *cx, uint8_t *sign) {
-    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW;
-    std::string base64Sign= Encryption::base64Encode(sign, BLELN_NONCE_SIGN_LEN);
-    msg.append(",").append(base64Sign);
+void BLELNClient::sendChallengeNonceSign(BLELNConnCtx *cx, const std::string &nonceB64) {
+    uint8_t nonceRaw[BLELN_TEST_NONCE_LEN];             // Servers nonce raw bytes
+    uint8_t friendsNonceSign[BLELN_NONCE_SIGN_LEN];     // Servers nonce sing I have created
+
+    // Sign nonce
+    Encryption::base64Decode(nonceB64, nonceRaw, BLELN_TEST_NONCE_LEN);
+    authStore.signData(nonceRaw, BLELN_TEST_NONCE_LEN, friendsNonceSign);
+
+    // Create clients nonce
+    cx->generateTestNonce();
+    std::string myNonceB64= cx->getTestNonceBase64();
+
+    // Create BLE message
+    std::string msg= BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW_AND_NONCE;
+    std::string friendsNonceSignB64= Encryption::base64Encode(friendsNonceSign, BLELN_NONCE_SIGN_LEN);
+    msg.append(",").append(friendsNonceSignB64);
+    msg.append(",").append(myNonceB64);
 
     std::string encMsg;
     if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
         chKeyToSer->writeValue(encMsg, true);
     } else {
-        Serial.println("BLELNClient - failed encrypting cert msg");
+        Serial.println("[E] BLELNClient - failed encrypting cert msg");
     }
 }
 
@@ -429,7 +476,7 @@ void BLELNClient::sendCertToServer(BLELNConnCtx *cx) {
     if(cx->getSessionEnc()->encryptMessage(msg, encMsg)) {
         chKeyToSer->writeValue(encMsg, true);
     } else {
-        Serial.println("BLELNClient - failed encrypting cert msg");
+        Serial.println("[E] BLELNClient - failed encrypting cert msg");
     }
 }
 

@@ -22,13 +22,19 @@ public:
     State getState();
 
     void setCertData(uint8_t *macAddress, uint8_t *publicKey);
-    void setTestNonce(uint8_t *nonce);
+    void generateTestNonce();
+    uint8_t* getTestNonce();
+    std::string getTestNonceBase64();
     bool verifyChallengeResponseAnswer(uint8_t *nonceSign);
 
     bool makeSessionKey();
 
     BLELNSessionEnc* getSessionEnc();
+
+    unsigned long getTimeOfLife() const;
 private:
+    unsigned long birthTime;
+
     uint16_t h = 0;
     State s;
 

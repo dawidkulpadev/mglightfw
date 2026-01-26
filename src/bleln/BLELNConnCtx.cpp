@@ -8,6 +8,7 @@
 BLELNConnCtx::BLELNConnCtx(uint16_t handle) {
     s= State::New;
     h = handle;
+    birthTime= millis();
 }
 
 BLELNConnCtx::~BLELNConnCtx() {
@@ -46,12 +47,24 @@ void BLELNConnCtx::setCertData(uint8_t *macAddress, uint8_t *publicKey) {
     memcpy(pubKey, publicKey, BLELN_DEV_PUB_KEY_LEN);
 }
 
-void BLELNConnCtx::setTestNonce(uint8_t *nonce) {
-    memcpy(testNonce, nonce, BLELN_TEST_NONCE_LEN);
+void BLELNConnCtx::generateTestNonce() {
+    Encryption::random_bytes(testNonce, BLELN_TEST_NONCE_LEN);
 }
+
 
 bool BLELNConnCtx::verifyChallengeResponseAnswer(uint8_t *nonceSign) {
     return Encryption::verifySign_ECDSA_P256(testNonce, BLELN_TEST_NONCE_LEN, nonceSign,
                                              BLELN_DEV_SIGN_LEN, pubKey, BLELN_DEV_PUB_KEY_LEN);
 }
 
+uint8_t *BLELNConnCtx::getTestNonce() {
+    return testNonce;
+}
+
+std::string BLELNConnCtx::getTestNonceBase64() {
+    return Encryption::base64Encode(testNonce, BLELN_TEST_NONCE_LEN);
+}
+
+unsigned long BLELNConnCtx::getTimeOfLife() const {
+    return millis()-birthTime;
+}

@@ -7,8 +7,19 @@ import binascii
 import re
 import configparser
 import subprocess
+import time
+
+# Importy kryptograficzne
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+# --- Import esptool do komunikacji z chipem ---
+try:
+    import esptool
+    import serial.tools.list_ports
+    ESPTOOL_AVAILABLE = True
+except ImportError:
+    ESPTOOL_AVAILABLE = False
 
 
 def load_config(config_path):
@@ -73,12 +84,74 @@ def run_nvs_generator(tool_path, csv_path, bin_path, size):
         print(f"[Error] NVS generator returned error: {e}")
         sys.exit(1)
 
+# --- POPRAWIONA FUNKCJA ODCZYTU MAC (v4) ---
+def get_mac_from_device(port=None):
+    if not ESPTOOL_AVAILABLE:
+        print("[Error] 'esptool' library not found. Install it via: pip install esptool")
+        sys.exit(1)
+
+    # 1. Automatyczne wykrywanie portu
+    if port is None:
+        ports = list(serial.tools.list_ports.comports())
+        esp_ports = [p.device for p in ports if 'USB' in p.description or 'USB' in p.hwid]
+
+        if not esp_ports:
+            if ports:
+                port = ports[0].device
+            else:
+                print("[Error] No serial ports found. Connect ESP32 or specify --port.")
+                sys.exit(1)
+        else:
+            port = esp_ports[0]
+        print(f"[*] Auto-detected port: {port}")
+
+    # 2. Łączenie z chipem przy użyciu detect_chip
+    print(f"[*] Connecting to ESP32 on {port}...")
+    try:
+        # UWAGA: Używamy esptool.detect_chip, który automatycznie dobiera odpowiednią klasę (ESP32 vs ESP32-C3)
+        # Dzięki temu unikamy błędu "Wrong chip argument"
+        esp = esptool.detect_chip(port, baud=115200)
+
+        chip_desc = esp.get_chip_description()
+        print(f"    Connected to: {chip_desc}")
+
+        # 3. Odczyt MAC
+        mac_raw = esp.read_mac()
+
+        # Konwersja wyniku na bytes
+        if isinstance(mac_raw, tuple) or isinstance(mac_raw, list):
+            mac_bytes = bytes(mac_raw)
+        elif isinstance(mac_raw, str):
+            mac_clean = mac_raw.replace(':', '')
+            mac_bytes = binascii.unhexlify(mac_clean)
+        else:
+            mac_bytes = bytes(mac_raw)
+
+        hex_mac = binascii.hexlify(mac_bytes).decode('utf-8')
+        print(f"    Read MAC Address: {hex_mac}")
+
+        # Hard reset, aby uwolnić port i zrestartować ESP
+        esp.hard_reset()
+        esp._port.close()
+
+        return hex_mac
+
+    except Exception as e:
+        print(f"[Error] Failed to communicate with ESP32: {e}")
+        print("    Try holding the BOOT button on the ESP32 while running the script.")
+        sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Key and NVS image generator for ESP32")
 
     parser.add_argument("--ca_key", required=True, help="Path to ca_key.pem file")
-    parser.add_argument("--mac", required=True, help="MAC address (e.g., AA:BB:CC:DD:EE:FF)")
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--mac", help="Manual MAC address (AA:BB:CC:DD:EE:FF)")
+    group.add_argument("--read_mac", action="store_true", help="Read MAC address directly from connected ESP32")
+
+    parser.add_argument("--port", required=False, help="Serial port for ESP32 (e.g. COM3, /dev/ttyUSB0)")
 
     parser.add_argument("--out", required=False, help="Optional output filename (without extension)")
     parser.add_argument("--config", required=False, default="./config.ini",
@@ -93,8 +166,26 @@ def main():
     nvs_tool = nvs_config['tool_path']
     nvs_size = nvs_config.get('partition_size', '0x5000')
 
+    # --- LOGIKA WYBORU MAC ---
+    if args.read_mac:
+        mac_input = get_mac_from_device(args.port)
+    else:
+        mac_input = args.mac
+    # -------------------------
 
-    clean_mac_hex = re.sub(r'[^a-fA-F0-9]', '', args.mac).lower()
+    # Czyszczenie i parsowanie MAC adresu
+    clean_mac_hex = re.sub(r'[^a-fA-F0-9]', '', mac_input).lower()
+
+    if len(clean_mac_hex) != 12:
+        print(f"[Error] Invalid MAC address format or length.")
+        print(f"       Expected 12 hex characters, got: {len(clean_mac_hex)}")
+        sys.exit(1)
+
+    try:
+        mac_raw_bytes = binascii.unhexlify(clean_mac_hex)
+    except binascii.Error as e:
+        print(f"[Error] Failed to convert MAC to bytes: {e}")
+        sys.exit(1)
 
     if args.out:
         base_name = os.path.splitext(args.out)[0]
@@ -104,7 +195,7 @@ def main():
     csv_filename = f"{base_name}.csv"
     bin_filename = f"{base_name}.bin"
 
-    print(f"--- Generating data for MAC: {args.mac} ---")
+    print(f"--- Generating data for MAC: {clean_mac_hex} ---")
 
 
     manu_priv_key = load_pem_private_key(args.ca_key)
@@ -123,7 +214,7 @@ def main():
     dev_pub_bytes = int_to_bytes(dev_pub_nums.x) + int_to_bytes(dev_pub_nums.y)
 
 
-    mac_b64 = base64.b64encode(args.mac.encode('utf-8')).decode('utf-8')
+    mac_b64 = base64.b64encode(mac_raw_bytes).decode('utf-8')
     dev_pub_b64 = base64.b64encode(dev_pub_bytes).decode('utf-8')
 
     payload_str = f"2;{mac_b64};{dev_pub_b64}"
