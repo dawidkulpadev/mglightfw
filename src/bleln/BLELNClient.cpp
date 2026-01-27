@@ -17,8 +17,8 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
     Encryption::randomizer_init();
     authStore.loadCert();
 
-    dataRxQueue = xQueueCreate(10, sizeof(RxPacket));
-    keyRxQueue = xQueueCreate(5, sizeof(RxPacket));
+    dataRxQueue = xQueueCreate(10, sizeof(BLELNMsgQueuePacket));
+    keyRxQueue = xQueueCreate(5, sizeof(BLELNMsgQueuePacket));
     onMsgRx= std::move(onServerResponse);
     runWorker= true;
     connMtx= xSemaphoreCreateMutex();
@@ -26,6 +26,7 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
         delete connCtx;
         xSemaphoreGive(connMtx);
     } else {
+        Serial.println("[E] BLELNClient - Failed locking mutex (onDisconnect)");
         // TODO: Error handling
     }
     xTaskCreatePinnedToCore(
@@ -142,7 +143,7 @@ bool BLELNClient::discover() {
 
 
 /*** Connection context not protected! */
-bool BLELNClient::handshake(uint8_t *v, size_t vlen) {
+bool BLELNClient::handshake(BLELNConnCtx *cx, uint8_t *v, size_t vlen) {
     if (vlen!=1+4+32+65+12 || (uint8_t)v[0]!=1) {
         return false;
     }
@@ -182,6 +183,7 @@ bool BLELNClient::sendEncrypted(const std::string &msg) {
         }
         xSemaphoreGive(connMtx);
     } else {
+        Serial.println("[E] BLELNClient - Failed locking mutex (sendEncrypted)");
         return false;
     }
 
@@ -190,10 +192,6 @@ bool BLELNClient::sendEncrypted(const std::string &msg) {
 
 bool BLELNClient::isConnected() {
     return (client!= nullptr) && (client->isConnected());
-}
-
-bool BLELNClient::hasDiscoveredClient() {
-    return svc!= nullptr;
 }
 
 void BLELNClient::onPassKeyEntry(NimBLEConnInfo &connInfo) {
@@ -232,7 +230,7 @@ void BLELNClient::appendToQueue(const uint8_t *m, size_t mlen, QueueHandle_t *qu
     if (!heapBuf) return;
     memcpy(heapBuf, m, mlen);
 
-    RxPacket pkt{ 0,mlen, heapBuf };
+    BLELNMsgQueuePacket pkt{0, mlen, heapBuf };
     if (xQueueSend(*queue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
     }
@@ -249,15 +247,13 @@ void BLELNClient::rxWorker() {
                     Serial.println("[E] BLELNClient - discover failed");
                 }
             }
-            xSemaphoreGive(connMtx);
-        }
 
-        RxPacket keyPkt{};
-        if(xQueueReceive(keyRxQueue, &keyPkt, 0)==pdTRUE){
-            if(xSemaphoreTake(connMtx, 0)==pdTRUE){
+            BLELNMsgQueuePacket keyPkt{};
+            if(xQueueReceive(keyRxQueue, &keyPkt, 0)==pdTRUE){
                 if(connCtx!= nullptr){
                     if(connCtx->getState()==BLELNConnCtx::State::WaitingForKey){
-                        if(handshake(keyPkt.buf, keyPkt.len)){
+                        Serial.println("Received servers key");
+                        if(handshake(connCtx, keyPkt.buf, keyPkt.len)){
                             connCtx->setState(BLELNConnCtx::State::WaitingForCert);
                         } else {
                             Serial.println("[E] BLELNClient - handshake failed");
@@ -319,6 +315,7 @@ void BLELNClient::rxWorker() {
                                     msg.append(",1");
                                     std::string encMsg;
                                     if(connCtx->getSessionEnc()->encryptMessage(msg, encMsg)) {
+                                        connCtx->setState(BLELNConnCtx::State::Authorised);
                                         Serial.println("[D] BLELNClient - auth success");
                                         Serial.printf("[D] BLELNClient - client %d live for %d ms\r\n", connCtx->getHandle(), connCtx->getTimeOfLife());
                                         chKeyToSer->writeValue(encMsg, true);
@@ -340,33 +337,34 @@ void BLELNClient::rxWorker() {
                         }
                     }
                 }
-                xSemaphoreGive(connMtx);
             }
-        }
 
-        RxPacket pkt{};
-        if (xQueueReceive(dataRxQueue, &pkt, 0) == pdTRUE) {
-            if(xSemaphoreTake(connMtx, pdMS_TO_TICKS(100))==pdTRUE){
+            BLELNMsgQueuePacket pkt{};
+            if (xQueueReceive(dataRxQueue, &pkt, 0) == pdTRUE) {
                 if(connCtx!= nullptr and connCtx->getSessionEnc()->getSessionId() != 0) {
-                    if (pkt.len >= 4 + 12 + 16) {
-                        std::string plain;
-                        if (connCtx->getSessionEnc()->decryptMessage(pkt.buf, pkt.len, plain)) {
-                            if (onMsgRx) {
-                                onMsgRx(plain);
+                    if(connCtx->getState()==BLELNConnCtx::State::Authorised) {
+                        if (pkt.len >= 4 + 12 + 16) {
+                            std::string plain;
+                            if (connCtx->getSessionEnc()->decryptMessage(pkt.buf, pkt.len, plain)) {
+                                if (onMsgRx) {
+                                    onMsgRx(plain);
+                                }
                             }
                         }
+                    } else {
+                        disconnect(BLE_ERR_CONN_REJ_SECURITY);
                     }
                 }
 
-                xSemaphoreGive(connMtx);
+                free(pkt.buf);
             }
 
-            free(pkt.buf);
+            xSemaphoreGive(connMtx);
         }
 
         // Pause task
         if((uxQueueMessagesWaiting(dataRxQueue) > 0) or (uxQueueMessagesWaiting(keyRxQueue) > 0)){
-            vTaskDelay(pdMS_TO_TICKS(1));
+            vTaskDelay(pdMS_TO_TICKS(5));
         } else {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
@@ -378,6 +376,7 @@ void BLELNClient::onDisconnect(NimBLEClient *pClient, int reason) {
         delete connCtx;
         xSemaphoreGive(connMtx);
     } else {
+        Serial.println("[E] BLELNClient - Failed locking mutex (onDisconnect)");
         // TODO: Error handling
     }
     NimBLEClientCallbacks::onDisconnect(pClient, reason);
@@ -392,6 +391,7 @@ void BLELNClient::onConnect(NimBLEClient *pClient) {
         connCtx= new BLELNConnCtx(pClient->getConnHandle());
         xSemaphoreGive(connMtx);
     } else {
+        Serial.println("[E] BLELNClient - Failed locking mutex (onConnect)");
         // TODO: Error handling
     }
 
@@ -402,6 +402,7 @@ void BLELNClient::onConnectFail(NimBLEClient *pClient, int reason) {
         delete connCtx;
         xSemaphoreGive(connMtx);
     } else {
+        Serial.println("[E] BLELNClient - Failed locking mutex (onDisconnect)");
         // TODO: Error handling
     }
     if(onConRes)
@@ -424,7 +425,7 @@ void BLELNClient::disconnect(uint8_t reason) {
     NimBLEDevice::deleteClient(client);
 }
 
-
+/*** Connection context not protected! */
 void BLELNClient::sendChallengeNonce(BLELNConnCtx *cx) {
     uint8_t nonce[BLELN_TEST_NONCE_LEN];
     Encryption::random_bytes(nonce, BLELN_TEST_NONCE_LEN);
@@ -442,6 +443,7 @@ void BLELNClient::sendChallengeNonce(BLELNConnCtx *cx) {
     }
 }
 
+/*** Connection context not protected! */
 void BLELNClient::sendChallengeNonceSign(BLELNConnCtx *cx, const std::string &nonceB64) {
     uint8_t nonceRaw[BLELN_TEST_NONCE_LEN];             // Servers nonce raw bytes
     uint8_t friendsNonceSign[BLELN_NONCE_SIGN_LEN];     // Servers nonce sing I have created
@@ -468,6 +470,7 @@ void BLELNClient::sendChallengeNonceSign(BLELNConnCtx *cx, const std::string &no
     }
 }
 
+/*** Connection context not protected! */
 void BLELNClient::sendCertToServer(BLELNConnCtx *cx) {
     std::string msg=BLELN_MSG_TITLE_CERT;
     msg.append(",").append(authStore.getSignedCert());

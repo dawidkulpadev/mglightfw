@@ -21,10 +21,17 @@
 
 #include "Arduino.h"
 
-struct RxPacket {
+struct BLELNMsgQueuePacket {
     uint16_t conn;
     size_t   len;
     uint8_t *buf;    // malloc/free
+};
+
+struct BLELNWorkerAction {
+    uint16_t connH;
+    uint8_t action;
+    size_t dlen;
+    uint8_t *d;
 };
 
 class BLELNBase {

@@ -94,7 +94,7 @@ void ConnectivityConfig::loop() {
             }
 
             WiFi.scanNetworks(true, false, false, 300);
-            blelnServer->sendEncrypted(("$WIFIL,"+resStr));
+            blelnServer->sendEncryptedToAll(("$WIFIL," + resStr));
         }
 
         if(rebootCalled){

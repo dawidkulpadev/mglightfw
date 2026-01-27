@@ -17,6 +17,9 @@
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 
+// TODO: Add new clients, deleted clients and send queues
+
+
 
 
 class BLELNServer : public NimBLEScanCallbacks, public NimBLEServerCallbacks{
@@ -28,9 +31,9 @@ public:
     bool getConnContext(uint16_t h, BLELNConnCtx** c);
     bool noClientsConnected();
 
-    bool sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
+
     bool sendEncrypted(uint16_t h, const std::string& msg);
-    bool sendEncrypted(const std::string& msg);
+    bool sendEncryptedToAll(const std::string& msg);
 
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
 
@@ -46,9 +49,13 @@ private:
 
     // Multithreading
     SemaphoreHandle_t clisMtx = nullptr;
-    SemaphoreHandle_t txMtx = nullptr;
+    QueueHandle_t workerActionQueue;
     QueueHandle_t dataRxQueue;
     QueueHandle_t keyRxQueue;
+    QueueHandle_t newClientsQueue;
+    QueueHandle_t disconnectedClientsQueue;
+    QueueHandle_t subscriptionQueue;
+    QueueHandle_t msgsToSendQueue;
     bool runWorker;
 
     // Encryption
@@ -68,7 +75,7 @@ private:
     unsigned long lastWaterMarkPrint=0;
 
     // Private methods
-    bool sendEncrypted(int i, const std::string& msg);
+    bool _sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
     void sendKeyToClient(BLELNConnCtx *cx);
     void sendCertToClient(BLELNConnCtx *cx);
     void sendChallengeNonce(BLELNConnCtx *cx);
@@ -84,7 +91,7 @@ private:
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
     void onDataWrite(NimBLECharacteristic* c, NimBLEConnInfo& info);
     void onKeyToSerWrite(NimBLECharacteristic* c, NimBLEConnInfo& info);
-    void onKeyToCliSubscribe(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue);
+    void onKeyToCliSubscribe(__attribute__((unused)) NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo, uint16_t subValue);
 
     // Callback classes
     class DataRxClb : public NimBLECharacteristicCallbacks{

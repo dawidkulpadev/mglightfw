@@ -23,12 +23,9 @@ public:
 
     bool isScanning() const;
     bool isConnected();
-    bool hasDiscoveredClient();
 
     void onConnect(NimBLEClient* pClient) override;
-
     void onConnectFail(NimBLEClient *pClient, int reason) override;
-
     void onDiscovered(const NimBLEAdvertisedDevice* advertisedDevice) override;
     void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override;
     void onScanEnd(const NimBLEScanResults& scanResults, int reason) override;
@@ -43,7 +40,7 @@ private:
     void sendChallengeNonce(BLELNConnCtx *cx);
     void sendChallengeNonceSign(BLELNConnCtx *cx, const std::string &nonceB64);
     bool discover();
-    bool handshake(uint8_t *v, size_t vlen);
+    bool handshake(BLELNConnCtx *cx, uint8_t *v, size_t vlen);
 
     void onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length,
                        __attribute__((unused)) bool isNotify);
