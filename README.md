@@ -1,5 +1,8 @@
-## Klucze NVM:
-### Przestrzeń cert
+# MioGiapicco Light Firmware Gen 2
+Firmware for the ESP32-C3 chip of the MioGiapicco Light device, version 4 or higher.
+
+## NVM:
+### _cert_ namespace keys
 * pc_sign - Product certificate sign
 * manu_pub - Manufacture public key
 * dev_pub - devices public key
@@ -7,7 +10,7 @@
 
 
 Product certificate:
-- Product generation    (string - liczba)
+- Product generation    (string - number)
 - Device ID             (devices mac address) (base64)
 - Devices public key    (base64)
 

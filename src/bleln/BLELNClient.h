@@ -31,7 +31,7 @@ public:
     void onScanEnd(const NimBLEScanResults& scanResults, int reason) override;
     void onDisconnect(NimBLEClient* pClient, int reason) override;
 
-    void rxWorker();
+    void worker();
     void appendActionToQueue(uint8_t type, uint16_t conH, const uint8_t *data, size_t dataLen);
 
     void onPassKeyEntry(NimBLEConnInfo& connInfo) override;

@@ -26,7 +26,7 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
 
     xTaskCreatePinnedToCore(
             [](void* arg){
-                static_cast<BLELNClient*>(arg)->rxWorker();
+                static_cast<BLELNClient *>(arg)->worker();
                 vTaskDelete(nullptr);
             },
             "BLELNrx", 4096, this, 5, nullptr, 1);
@@ -226,7 +226,7 @@ void BLELNClient::appendActionToQueue(uint8_t type, uint16_t conH, const uint8_t
 
 }
 
-void BLELNClient::rxWorker() {
+void BLELNClient::worker() {
     while(runWorker){
         BLELNWorkerAction action{};
         if(xQueueReceive(workerActionQueue, &action, 0)==pdTRUE) {
