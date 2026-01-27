@@ -38,7 +38,7 @@ public:
     void setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb);
 
     void worker();
-    void worker_cleanup();
+
 private:
     // Intefaces
     std::function<void(uint16_t cliH, const std::string& msg)> onMsgReceived;
@@ -50,12 +50,6 @@ private:
     // Multithreading
     SemaphoreHandle_t clisMtx = nullptr;
     QueueHandle_t workerActionQueue;
-    QueueHandle_t dataRxQueue;
-    QueueHandle_t keyRxQueue;
-    QueueHandle_t newClientsQueue;
-    QueueHandle_t disconnectedClientsQueue;
-    QueueHandle_t subscriptionQueue;
-    QueueHandle_t msgsToSendQueue;
     bool runWorker;
 
     // Encryption
@@ -75,6 +69,14 @@ private:
     unsigned long lastWaterMarkPrint=0;
 
     // Private methods
+    void worker_registerClient(uint16_t h);
+    void worker_deleteClient(uint16_t h);
+    void worker_processSubscription(uint16_t h);
+    void worker_sendMessage(uint16_t h, uint8_t *data, size_t dataLen);
+    void worker_processKeyRx(uint16_t h, uint8_t *data, size_t dataLen);
+    void worker_processDataRx(uint16_t h, uint8_t *data, size_t dataLen);
+    void worker_cleanup();
+
     bool _sendEncrypted(BLELNConnCtx *cx, const std::string& msg);
     void sendKeyToClient(BLELNConnCtx *cx);
     void sendCertToClient(BLELNConnCtx *cx);

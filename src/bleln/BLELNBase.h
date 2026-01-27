@@ -19,20 +19,27 @@
 #define BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW             "$CHRA"
 #define BLELN_MSG_TITLE_AUTH_OK                             "$AUOK"
 
+
 #include "Arduino.h"
 
-struct BLELNMsgQueuePacket {
-    uint16_t conn;
-    size_t   len;
-    uint8_t *buf;    // malloc/free
+
+enum blen_wroker_actions {
+    BLELN_WORKER_ACTION_REGISTER_CONNECTION,
+    BLELN_WORKER_ACTION_DELETE_CONNECTION,
+    BLELN_WORKER_ACTION_PROCESS_SUBSCRIPTION,
+    BLELN_WORKER_ACTION_PROCESS_DATA_RX,
+    BLELN_WORKER_ACTION_PROCESS_KEY_RX,
+    BLELN_WORKER_ACTION_SEND_MESSAGE
 };
 
 struct BLELNWorkerAction {
     uint16_t connH;
-    uint8_t action;
+    uint8_t type;
     size_t dlen;
     uint8_t *d;
 };
+
+
 
 class BLELNBase {
 public:

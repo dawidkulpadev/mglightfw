@@ -16,12 +16,7 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
     clisMtx= xSemaphoreCreateMutex();
 
     // Initialize queues
-    dataRxQueue = xQueueCreate(20, sizeof(BLELNMsgQueuePacket));
-    keyRxQueue = xQueueCreate(20, sizeof(BLELNMsgQueuePacket));
-    newClientsQueue = xQueueCreate(10, sizeof(uint16_t));
-    subscriptionQueue = xQueueCreate(10, sizeof(uint16_t));
-    disconnectedClientsQueue= xQueueCreate(10, sizeof(uint16_t));
-    msgsToSendQueue= xQueueCreate(10, sizeof(BLELNMsgQueuePacket));
+    workerActionQueue = xQueueCreate(50, sizeof(BLELNWorkerAction));
 
     // Start worker thread
     runWorker= true;
@@ -87,8 +82,8 @@ void BLELNServer::stop() {
     // Stop rx worker
     runWorker= false;
 
-    if(dataRxQueue)
-        xQueueReset(dataRxQueue);
+    if(workerActionQueue)
+        xQueueReset(workerActionQueue);
 
     // Disconnect every client
     if (srv!=nullptr) {
@@ -186,8 +181,8 @@ bool BLELNServer::sendEncrypted(uint16_t h, const std::string &msg) {
     if (!heapBuf) return false;
     memcpy(heapBuf, msg.data(), msg.size());
 
-    BLELNMsgQueuePacket pkt{h, msg.size(), heapBuf };
-    if (xQueueSend(msgsToSendQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+    BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_SEND_MESSAGE, msg.size(), heapBuf };
+    if (xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
         return false;
     }
@@ -202,8 +197,8 @@ bool BLELNServer::sendEncryptedToAll(const std::string &msg) {
     memcpy(heapBuf, msg.data(), msg.size());
 
 
-    BLELNMsgQueuePacket pkt{UINT16_MAX, msg.size(), heapBuf };
-    if (xQueueSend(msgsToSendQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+    BLELNWorkerAction pkt{UINT16_MAX, BLELN_WORKER_ACTION_SEND_MESSAGE, msg.size(), heapBuf };
+    if (xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
         return false;
     }
@@ -220,199 +215,37 @@ void BLELNServer::worker() {
             lastWaterMarkPrint= millis();
         }
 
-
-        // Check new clients queue
-        uint16_t newConnHandle;
-        if(xSemaphoreTake(clisMtx, 0)==pdTRUE) {
-            if (xQueueReceive(newClientsQueue, &newConnHandle, 0) == pdTRUE) {
-                BLELNConnCtx *c = nullptr;
-
-                if (!getConnContext(newConnHandle, &c)) {
-
-                    connCtxs.emplace_back(newConnHandle);
-                    c = (connCtxs.end() - 1).base();
-
-                    if (!c->makeSessionKey()) {
-                        Serial.println("[E] BLELNServer - ECDH keygen fail");
-                    }
+        BLELNWorkerAction action{};
+        if(xSemaphoreTake(clisMtx, 0)==pdTRUE){
+            if(xQueueReceive(workerActionQueue, &action, 0)==pdTRUE){
+                if(action.type == BLELN_WORKER_ACTION_REGISTER_CONNECTION){
+                    worker_registerClient(action.connH);
+                    xSemaphoreGive(clisMtx);
+                } else if(action.type == BLELN_WORKER_ACTION_DELETE_CONNECTION){
+                    worker_deleteClient(action.connH);
+                    xSemaphoreGive(clisMtx);
+                } else if(action.type==BLELN_WORKER_ACTION_PROCESS_SUBSCRIPTION){
+                    xSemaphoreGive(clisMtx);
+                    worker_processSubscription(action.connH);
+                } else if(action.type==BLELN_WORKER_ACTION_SEND_MESSAGE){
+                    xSemaphoreGive(clisMtx);
+                    worker_sendMessage(action.connH, action.d, action.dlen);
+                } else if(action.type==BLELN_WORKER_ACTION_PROCESS_KEY_RX){
+                    xSemaphoreGive(clisMtx);
+                    worker_processKeyRx(action.connH, action.d, action.dlen);
+                } else if(action.type==BLELN_WORKER_ACTION_PROCESS_DATA_RX){
+                    xSemaphoreGive(clisMtx);
+                    worker_processDataRx(action.connH, action.d, action.dlen);
                 }
-            }
 
-            // Check disconnected clients queue
-            uint16_t disconnectedConnHandle;
-            if (xQueueReceive(disconnectedClientsQueue, &disconnectedConnHandle, 0) == pdTRUE) {
-                int removeIdx = -1;
-
-                for (int i = 0; i < connCtxs.size(); i++) {
-                    if (connCtxs[i].getHandle() == disconnectedConnHandle) {
-                        removeIdx = i;
-                        break;
-                    }
-                }
-                if (removeIdx >= 0) {
-                    connCtxs.erase(connCtxs.begin() + removeIdx);
-                }
-            }
-
-            xSemaphoreGive(clisMtx);
-        }
-
-        // Check subscription queue
-        uint16_t subscribeConnHandle;
-        if(xQueueReceive(subscriptionQueue, &subscribeConnHandle, 0)==pdTRUE){
-            BLELNConnCtx *cx;
-            if (getConnContext(subscribeConnHandle, &cx)) {
-                if (cx->getState() == BLELNConnCtx::State::Initialised) {
-                    sendKeyToClient(cx);
-                } else {
-                    Serial.println("[E] BLELNServer - Invalid context state");
-                }
-            }
-        }
-
-        // Check user msgs to send queue
-        BLELNMsgQueuePacket sendPkt{};
-        if(xQueueReceive(msgsToSendQueue, &sendPkt, 0)==pdTRUE){
-            if(sendPkt.conn==UINT16_MAX){
-                std::string m(reinterpret_cast<char*>(sendPkt.buf), sendPkt.len);
-                for(auto & connCtx : connCtxs){
-                    _sendEncrypted(&connCtx,m);
-                }
+                free(action.d);
             } else {
-                BLELNConnCtx *cx;
-                if(getConnContext(sendPkt.conn, &cx)){
-                    std::string m(reinterpret_cast<char*>(sendPkt.buf), sendPkt.len);
-                    _sendEncrypted(cx, m);
-                }
+                xSemaphoreGive(clisMtx);
             }
-
-            free(sendPkt.buf);
-        }
-
-        // Check key queue
-        BLELNMsgQueuePacket keyPkt{};
-        if (xQueueReceive(keyRxQueue, &keyPkt, 0) == pdTRUE) {
-            // If new key message received
-            BLELNConnCtx *cx;
-            // Find context for client who sent message
-            if (getConnContext(keyPkt.conn, &cx)) {
-                if (cx->getState() == BLELNConnCtx::State::WaitingForKey) {
-                    // If I'm waiting for clients session key
-                    // [ver=1][cliPub:65][cliNonce:12]
-                    if (keyPkt.len != 1 + 65 + 12 || keyPkt.buf[0] != 1) {
-                        Serial.println("[E] BLELNServer - bad key packet");
-                    } else {
-                        // Read clients session key
-                        bool r = cx->getSessionEnc()->deriveFriendsKey(keyPkt.buf + 1,
-                                                                       keyPkt.buf + 1 + 65, g_psk_salt,
-                                                                       g_epoch);
-                        if (r) {
-                            cx->setState(BLELNConnCtx::State::WaitingForCert);
-                            sendCertToClient(cx);
-                        } else {
-                            Serial.println("[E] BLELNServer - derive failed");
-                        }
-                    }
-                } else if (cx->getState() == BLELNConnCtx::State::WaitingForCert) {
-                    // If I'm waiting for clients certificate
-                    std::string plainKeyMsg;
-                    if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
-                        StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
-                        if (parts[0] == BLELN_MSG_TITLE_CERT and parts.size() == 3) {
-                            uint8_t gen;
-                            uint8_t fMac[6];
-                            uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
-
-                            if (authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64)) {
-                                cx->setCertData(fMac, fPubKey);
-                                sendChallengeNonce(cx);
-                                cx->setState(BLELNConnCtx::State::ChallengeResponseCli);
-                            } else {
-                                disconnectClient(cx, BLE_ERR_AUTH_FAIL);
-                                cx->setState(BLELNConnCtx::State::AuthFailed);
-                                Serial.println("[E] BLELNServer - WaitingForCert - invalid cert");
-                            }
-                        } else {
-                            Serial.println("[E] BLELNServer - WaitingForCert - wrong message");
-                            disconnectClient(cx, BLE_ERR_AUTH_FAIL);
-                            cx->setState(BLELNConnCtx::State::AuthFailed);
-                        }
-                    } else {
-                        disconnectClient(cx, BLE_ERR_AUTH_FAIL);
-                        cx->setState(BLELNConnCtx::State::AuthFailed);
-                    }
-                } else if (cx->getState() == BLELNConnCtx::State::ChallengeResponseCli) {
-                    // If I'm waiting for clients challenge response
-                    std::string plainKeyMsg;
-                    if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
-                        StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
-                        if (parts[0] == BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW_AND_NONCE and parts.size() == 3) {
-                            uint8_t nonceSign[BLELN_NONCE_SIGN_LEN];
-                            Encryption::base64Decode(parts[1], nonceSign, BLELN_NONCE_SIGN_LEN);
-                            if (cx->verifyChallengeResponseAnswer(nonceSign)) {
-                                uint8_t nonce[BLELN_TEST_NONCE_LEN];            // Clients nonce
-                                uint8_t friendsNonceSign[BLELN_NONCE_SIGN_LEN]; // Clients nonce I have signed
-                                Encryption::base64Decode(parts[2], nonce, BLELN_TEST_NONCE_LEN);
-                                authStore.signData(nonce, BLELN_TEST_NONCE_LEN, friendsNonceSign);
-                                sendChallengeNonceSign(cx, friendsNonceSign);
-                                cx->setState(BLELNConnCtx::State::ChallengeResponseSer);
-                            } else {
-                                Serial.println("[E] BLELNServer - ChallengeResponseCli - invalid sign");
-                                disconnectClient(cx, BLE_ERR_AUTH_FAIL);
-                                cx->setState(BLELNConnCtx::State::AuthFailed);
-                            }
-                        } else {
-                            Serial.println("[E] BLELNServer - ChallengeResponseCli - wrong message");
-                            disconnectClient(cx, BLE_ERR_AUTH_FAIL);
-                            cx->setState(BLELNConnCtx::State::AuthFailed);
-                        }
-                    }
-                } else if (cx->getState() == BLELNConnCtx::State::ChallengeResponseSer) {
-                    // If I'm waiting for clients challenge response
-                    std::string plainKeyMsg;
-                    if (cx->getSessionEnc()->decryptMessage(keyPkt.buf, keyPkt.len, plainKeyMsg)) {
-                        StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
-                        if (parts[0] == BLELN_MSG_TITLE_AUTH_OK and parts.size() == 2) {
-                            Serial.printf("[I] BLELNServer - client %d authorised\r\n", cx->getHandle());
-                            cx->setState(BLELNConnCtx::State::Authorised);
-                        }
-                    }
-                }
-            }
-
-            free(keyPkt.buf);
-        }
-
-        // Check data queue
-        BLELNMsgQueuePacket dataPkt{};
-        if (xQueueReceive(dataRxQueue, &dataPkt, 0) == pdTRUE) {
-            // If new data message in queue
-            BLELNConnCtx *cx;
-            // Find context for client who sent data message
-            if (getConnContext(dataPkt.conn, &cx) and (cx != nullptr)) {
-                if (cx->getState() == BLELNConnCtx::State::Authorised) {
-                    std::string v(reinterpret_cast<char *>(dataPkt.buf), dataPkt.len);
-
-                    std::string plain;
-                    if (cx->getSessionEnc()->decryptMessage((const uint8_t *) v.data(), v.size(), plain)) {
-                        if (plain.size() > 200) plain.resize(200);
-                        for (auto &ch: plain) if (ch == '\0') ch = ' ';
-
-                        if (onMsgReceived)
-                            onMsgReceived(cx->getHandle(), plain);
-                    } else {
-                        Serial.println("[E] BLELNServer - failed to decrypt data message");
-                    }
-                } else {
-                    disconnectClient(cx, BLE_ERR_CONN_REJ_SECURITY);
-                }
-            }
-
-            free(dataPkt.buf);
         }
 
         // Pause task
-        if((uxQueueMessagesWaiting(dataRxQueue) > 0) or (uxQueueMessagesWaiting(keyRxQueue) > 0)){
+        if((uxQueueMessagesWaiting(workerActionQueue) > 0)){
             vTaskDelay(pdMS_TO_TICKS(5));
         } else {
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -422,21 +255,187 @@ void BLELNServer::worker() {
     worker_cleanup();
 }
 
-void BLELNServer::worker_cleanup() {
-    BLELNMsgQueuePacket pkt{};
-    while (xQueueReceive(dataRxQueue, &pkt, 0) == pdPASS) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        free(pkt.buf);
-    }
 
-    while (xQueueReceive(keyRxQueue, &pkt, 0) == pdPASS) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        free(pkt.buf);
+
+
+/// *************** PRIVATE - Methods ***************
+
+void BLELNServer::worker_registerClient(uint16_t h) {
+    BLELNConnCtx *c = nullptr;
+
+    if (!getConnContext(h, &c)) {
+
+        connCtxs.emplace_back(h);
+        c = (connCtxs.end() - 1).base();
+
+        if (!c->makeSessionKey()) {
+            Serial.println("[E] BLELNServer - ECDH keygen fail");
+        }
+    }
+}
+
+void BLELNServer::worker_deleteClient(uint16_t h) {
+    int removeIdx = -1;
+
+    for (int i = 0; i < connCtxs.size(); i++) {
+        if (connCtxs[i].getHandle() == h) {
+            removeIdx = i;
+            break;
+        }
+    }
+    if (removeIdx >= 0) {
+        connCtxs.erase(connCtxs.begin() + removeIdx);
+    }
+}
+
+void BLELNServer::worker_processSubscription(uint16_t h) {
+    BLELNConnCtx *cx;
+    if (getConnContext(h, &cx)) {
+        if (cx->getState() == BLELNConnCtx::State::Initialised) {
+            sendKeyToClient(cx);
+        } else {
+            Serial.println("[E] BLELNServer - Invalid context state");
+        }
+    }
+}
+
+void BLELNServer::worker_sendMessage(uint16_t h, uint8_t *data, size_t dataLen) {
+    if(h==UINT16_MAX){
+        std::string m(reinterpret_cast<char*>(data), dataLen);
+        for(auto & connCtx : connCtxs){
+            _sendEncrypted(&connCtx,m);
+        }
+    } else {
+        BLELNConnCtx *cx;
+        if(getConnContext(h, &cx)){
+            std::string m(reinterpret_cast<char*>(data), dataLen);
+            _sendEncrypted(cx, m);
+        }
+    }
+}
+
+void BLELNServer::worker_processKeyRx(uint16_t h, uint8_t *data, size_t dataLen) {
+// If new key message received
+    BLELNConnCtx *cx;
+    // Find context for client who sent message
+    if (getConnContext(h, &cx)) {
+        if (cx->getState() == BLELNConnCtx::State::WaitingForKey) {
+            // If I'm waiting for clients session key
+            // [ver=1][cliPub:65][cliNonce:12]
+            if (dataLen != 1 + 65 + 12 || data[0] != 1) {
+                Serial.println("[E] BLELNServer - bad key packet");
+            } else {
+                // Read clients session key
+                bool r = cx->getSessionEnc()->deriveFriendsKey(data + 1,
+                                                               data + 1 + 65, g_psk_salt,
+                                                               g_epoch);
+                if (r) {
+                    cx->setState(BLELNConnCtx::State::WaitingForCert);
+                    sendCertToClient(cx);
+                } else {
+                    Serial.println("[E] BLELNServer - derive failed");
+                }
+            }
+        } else if (cx->getState() == BLELNConnCtx::State::WaitingForCert) {
+            // If I'm waiting for clients certificate
+            std::string plainKeyMsg;
+            if (cx->getSessionEnc()->decryptMessage(data, dataLen, plainKeyMsg)) {
+                StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
+                if (parts[0] == BLELN_MSG_TITLE_CERT and parts.size() == 3) {
+                    uint8_t gen;
+                    uint8_t fMac[6];
+                    uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
+
+                    if (authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64)) {
+                        cx->setCertData(fMac, fPubKey);
+                        sendChallengeNonce(cx);
+                        cx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+                    } else {
+                        disconnectClient(cx, BLE_ERR_AUTH_FAIL);
+                        cx->setState(BLELNConnCtx::State::AuthFailed);
+                        Serial.println("[E] BLELNServer - WaitingForCert - invalid cert");
+                    }
+                } else {
+                    Serial.println("[E] BLELNServer - WaitingForCert - wrong message");
+                    disconnectClient(cx, BLE_ERR_AUTH_FAIL);
+                    cx->setState(BLELNConnCtx::State::AuthFailed);
+                }
+            } else {
+                disconnectClient(cx, BLE_ERR_AUTH_FAIL);
+                cx->setState(BLELNConnCtx::State::AuthFailed);
+            }
+        } else if (cx->getState() == BLELNConnCtx::State::ChallengeResponseCli) {
+            // If I'm waiting for clients challenge response
+            std::string plainKeyMsg;
+            if (cx->getSessionEnc()->decryptMessage(data, dataLen, plainKeyMsg)) {
+                StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
+                if (parts[0] == BLELN_MSG_TITLE_CHALLENGE_RESPONSE_ANSW_AND_NONCE and parts.size() == 3) {
+                    uint8_t nonceSign[BLELN_NONCE_SIGN_LEN];
+                    Encryption::base64Decode(parts[1], nonceSign, BLELN_NONCE_SIGN_LEN);
+                    if (cx->verifyChallengeResponseAnswer(nonceSign)) {
+                        uint8_t nonce[BLELN_TEST_NONCE_LEN];            // Clients nonce
+                        uint8_t friendsNonceSign[BLELN_NONCE_SIGN_LEN]; // Clients nonce I have signed
+                        Encryption::base64Decode(parts[2], nonce, BLELN_TEST_NONCE_LEN);
+                        authStore.signData(nonce, BLELN_TEST_NONCE_LEN, friendsNonceSign);
+                        sendChallengeNonceSign(cx, friendsNonceSign);
+                        cx->setState(BLELNConnCtx::State::ChallengeResponseSer);
+                    } else {
+                        Serial.println("[E] BLELNServer - ChallengeResponseCli - invalid sign");
+                        disconnectClient(cx, BLE_ERR_AUTH_FAIL);
+                        cx->setState(BLELNConnCtx::State::AuthFailed);
+                    }
+                } else {
+                    Serial.println("[E] BLELNServer - ChallengeResponseCli - wrong message");
+                    disconnectClient(cx, BLE_ERR_AUTH_FAIL);
+                    cx->setState(BLELNConnCtx::State::AuthFailed);
+                }
+            }
+        } else if (cx->getState() == BLELNConnCtx::State::ChallengeResponseSer) {
+            // If I'm waiting for clients challenge response
+            std::string plainKeyMsg;
+            if (cx->getSessionEnc()->decryptMessage(data, dataLen, plainKeyMsg)) {
+                StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
+                if (parts[0] == BLELN_MSG_TITLE_AUTH_OK and parts.size() == 2) {
+                    Serial.printf("[I] BLELNServer - client %d authorised\r\n", cx->getHandle());
+                    cx->setState(BLELNConnCtx::State::Authorised);
+                }
+            }
+        }
+    }
+}
+
+void BLELNServer::worker_processDataRx(uint16_t h, uint8_t *data, size_t dataLen) {
+    // If new data message in queue
+    BLELNConnCtx *cx;
+    // Find context for client who sent data message
+    if (getConnContext(h, &cx) and (cx != nullptr)) {
+        if (cx->getState() == BLELNConnCtx::State::Authorised) {
+            std::string v(reinterpret_cast<char *>(data), dataLen);
+
+            std::string plain;
+            if (cx->getSessionEnc()->decryptMessage((const uint8_t *) v.data(), v.size(), plain)) {
+                if (plain.size() > 200) plain.resize(200);
+                for (auto &ch: plain) if (ch == '\0') ch = ' ';
+
+                if (onMsgReceived)
+                    onMsgReceived(cx->getHandle(), plain);
+            } else {
+                Serial.println("[E] BLELNServer - failed to decrypt data message");
+            }
+        } else {
+            disconnectClient(cx, BLE_ERR_CONN_REJ_SECURITY);
+        }
     }
 }
 
 
-/// *************** PRIVATE - Methods ***************
+void BLELNServer::worker_cleanup() {
+    BLELNWorkerAction pkt{};
+    while (xQueueReceive(workerActionQueue, &pkt, 0) == pdPASS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        free(pkt.d);
+    }
+}
 
 void BLELNServer::sendKeyToClient(BLELNConnCtx *cx) {
     // KEYEX_TX: [ver=1][epoch:4B][salt:32B][srvPub:65B][srvNonce:12B]
@@ -509,8 +508,8 @@ void BLELNServer::appendToDataQueue(uint16_t h, const std::string &m) {
     if (!heapBuf) return;
     memcpy(heapBuf, m.data(), m.size());
 
-    BLELNMsgQueuePacket pkt{h, m.size(), heapBuf };
-    if (xQueueSend(dataRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+    BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_PROCESS_DATA_RX, m.size(), heapBuf };
+    if (xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
     }
 }
@@ -520,8 +519,8 @@ void BLELNServer::appendToKeyQueue(uint16_t h, const std::string &m) {
     if (!heapBuf) return;
     memcpy(heapBuf, m.data(), m.size());
 
-    BLELNMsgQueuePacket pkt{h, m.size(), heapBuf };
-    if (xQueueSend(keyRxQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
+    BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_PROCESS_KEY_RX, m.size(), heapBuf };
+    if (xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(10)) != pdPASS) {
         free(heapBuf);
     }
 }
@@ -546,14 +545,18 @@ void BLELNServer::onScanEnd(const NimBLEScanResults &scanResults, int reason) {
 
 void BLELNServer::onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
     uint16_t h= connInfo.getConnHandle();
-    xQueueSend(newClientsQueue, &h, pdMS_TO_TICKS(100));
+
+    BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_REGISTER_CONNECTION, 0, nullptr};
+    xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(100));
 
     NimBLEDevice::startAdvertising();
 }
 
 void BLELNServer::onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) {
     uint16_t h= connInfo.getConnHandle();
-    xQueueSend(disconnectedClientsQueue, &h, pdMS_TO_TICKS(100));
+
+    BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_DELETE_CONNECTION, 0, nullptr};
+    xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(100));
 
     NimBLEDevice::startAdvertising();
 }
@@ -581,7 +584,8 @@ void BLELNServer::onKeyToCliSubscribe(__attribute__((unused)) NimBLECharacterist
 
     if(subValue>0) {
         uint16_t h= connInfo.getConnHandle();
-        xQueueSend(subscriptionQueue, &h, pdMS_TO_TICKS(100));
+        BLELNWorkerAction pkt{h, BLELN_WORKER_ACTION_PROCESS_SUBSCRIPTION, 0, nullptr};
+        xQueueSend(workerActionQueue, &pkt, pdMS_TO_TICKS(100));
     } else {
         Serial.println("[D] BLELNServer - Client unsubscribed for KeyTX");
     }
@@ -591,5 +595,10 @@ void BLELNServer::onKeyToCliSubscribe(__attribute__((unused)) NimBLECharacterist
 void BLELNServer::setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb) {
     onMsgReceived= std::move(cb);
 }
+
+
+
+
+
 
 
