@@ -17,6 +17,7 @@
 
     Please feel free to contact me at any time by email <dawidkulpadev@gmail.com>
 */
+
 #include "Arduino.h"
 #include "DeviceConfig.h"
 
@@ -25,7 +26,8 @@ DeviceConfig::DeviceConfig() {
     uid= nullptr;
     psk= nullptr;
     ssid= nullptr;
-    timezone= nullptr;
+    tz= nullptr;
+    r= '0';
 
     setPicklock("");
     setUid("");
@@ -51,7 +53,7 @@ char *DeviceConfig::getPicklock() const {
 }
 
 char *DeviceConfig::getTimezone() const {
-    return timezone;
+    return tz;
 }
 
 void DeviceConfig::setSsid(const char *v) {
@@ -83,8 +85,17 @@ void DeviceConfig::setPicklock(const char *v) {
 }
 
 void DeviceConfig::setTimezone(const char *v) {
-    delete[] timezone;
+    delete[] tz;
 
-    this->timezone = new char[strlen(v)+1];
-    strcpy(this->timezone, v);
+    this->tz = new char[strlen(v) + 1];
+    strcpy(this->tz, v);
 }
+
+char DeviceConfig::getRole() const {
+    return r;
+}
+
+void DeviceConfig::setRole(char role) {
+    r= role;
+}
+

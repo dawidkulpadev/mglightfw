@@ -20,12 +20,13 @@
 
 #include "ConfigManager.h"
 
-bool ConfigManager::readWifi(Preferences *prefs, DeviceConfig *config) {
+bool ConfigManager::readDeviceConfig(Preferences *prefs, DeviceConfig *config) {
     config->setSsid("dlink3");
     config->setPsk("sikakama2");
     config->setUid("2");
     config->setPicklock("test");
     config->setTimezone("Europe/Warsaw");
+    config->setRole(DEVICE_CONFIG_ROLE_SERVER);
     return true;
 
     if( !prefs->isKey(CONFIGMANAGER_KEY_SSID) or
@@ -58,16 +59,21 @@ bool ConfigManager::readWifi(Preferences *prefs, DeviceConfig *config) {
     prefs->getString(CONFIGMANAGER_KEY_TIMEZONE, buf, 256);
     config->setTimezone(buf);
 
+    // Read default role
+    buf[0]= prefs->getChar(CONFIGMANAGER_KEY_ROLE,  '0');
+    config->setRole(buf[0]);
+
     return true;
 }
 
-bool ConfigManager::writeWifi(Preferences *prefs, DeviceConfig *config) {
+bool ConfigManager::writeDeviceConfig(Preferences *prefs, DeviceConfig *config) {
     Serial.println(std::to_string(strlen(config->getSsid())).c_str());
     Serial.println(std::to_string(prefs->putString(CONFIGMANAGER_KEY_SSID, config->getSsid())).c_str());
     prefs->putString(CONFIGMANAGER_KEY_PSK, config->getPsk());
     prefs->putString(CONFIGMANAGER_KEY_UID, config->getUid());
     prefs->putString(CONFIGMANAGER_KEY_PICKLOCK, config->getPicklock());
     prefs->putString(CONFIGMANAGER_KEY_TIMEZONE, config->getTimezone());
+    prefs->putChar(CONFIGMANAGER_KEY_ROLE, (int8_t)config->getRole());
 
     return true;
 }
@@ -122,6 +128,7 @@ bool ConfigManager::clearWifiConfig(Preferences *prefs) {
     prefs->remove(CONFIGMANAGER_KEY_UID);
     prefs->remove(CONFIGMANAGER_KEY_PICKLOCK);
     prefs->remove(CONFIGMANAGER_KEY_TIMEZONE);
+    prefs->remove(CONFIGMANAGER_KEY_ROLE);
     return true;
 }
 

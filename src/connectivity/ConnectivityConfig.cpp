@@ -99,7 +99,7 @@ void ConnectivityConfig::loop() {
 
         if(rebootCalled){
             if(rebootCalledAt + 2000 < millis()){
-                ConfigManager::writeWifi(prefs, this->config);
+                ConfigManager::writeDeviceConfig(prefs, this->config);
                 esp_restart();
             }
         }

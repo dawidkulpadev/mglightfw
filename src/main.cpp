@@ -191,7 +191,7 @@ void setup() {
             buttonPressed= true;
     }
 
-    if(buttonPressed or !ConfigManager::readWifi(&prefs, &config)){
+    if(buttonPressed or !ConfigManager::readDeviceConfig(&prefs, &config)){
         Serial.println("Device: Config mode");
         deviceMode= DEVICE_MODE_CONFIG;
     } else {

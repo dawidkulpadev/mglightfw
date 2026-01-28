@@ -23,6 +23,10 @@
 
 #include <WString.h>
 
+#define DEVICE_CONFIG_ROLE_AUTO     '0'
+#define DEVICE_CONFIG_ROLE_SERVER   '1'
+#define DEVICE_CONFIG_ROLE_CLIENT   '2'
+
 
 class DeviceConfig {
 public:
@@ -33,19 +37,22 @@ public:
     char *getUid() const;
     char *getPicklock() const;
     char *getTimezone() const;
+    char getRole() const;
 
     void setSsid(const char *ssid);
     void setPsk(const char *psk);
     void setUid(const char *uid);
     void setPicklock(const char *picklock);
     void setTimezone(const char *timezone);
+    void setRole(char role);
 
 private:
     char *ssid;
     char *psk;
     char *uid;
     char *picklock;
-    char *timezone;
+    char *tz;
+    char r;
 };
 
 

@@ -29,7 +29,8 @@
 #define CONFIGMANAGER_KEY_SSID      "ssid"
 #define CONFIGMANAGER_KEY_PICKLOCK  "picklock"
 #define CONFIGMANAGER_KEY_UID       "uid"
-#define CONFIGMANAGER_KEY_TIMEZONE  "timezone"
+#define CONFIGMANAGER_KEY_TIMEZONE  "tz"
+#define CONFIGMANAGER_KEY_ROLE      "role"
 
 #define CONFIGMANAGER_KEY_DLI       "dli"
 #define CONFIGMANAGER_KEY_DS        "ds"
@@ -40,8 +41,8 @@
 
 class ConfigManager {
 public:
-    static bool readWifi(Preferences *prefs, DeviceConfig *config);
-    static bool writeWifi(Preferences *prefs, DeviceConfig *config);
+    static bool readDeviceConfig(Preferences *prefs, DeviceConfig *config);
+    static bool writeDeviceConfig(Preferences *prefs, DeviceConfig *config);
     static bool writeDay(Preferences *prefs, Day *day);
     static bool readDay(Preferences *prefs, Day *day);
     static bool clearWifiConfig(Preferences *prefs);
