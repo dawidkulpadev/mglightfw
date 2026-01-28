@@ -1,6 +1,6 @@
 /**
     MioGiapicco Light Firmware - Firmware for Light Device of MioGiapicco system
-    Copyright (C) 2023  Dawid Kulpa
+    Copyright (C) 2026  Dawid Kulpa
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -13,32 +13,27 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>. 
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
     Please feel free to contact me at any time by email <dawidkulpadev@gmail.com>
 */
 
-#ifndef WIFIMANAGER_H
-#define WIFIMANAGER_H
-
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
-#include "ConfigManager.h"
-
-class WiFiManager {
-public:
-    WiFiManager();
-
-    void initNormalMode(const char* ssid, const char* psk);
-    void startWiFiScan();
-    int16_t getScanResult(std::string &resStr);
-
-    uint8_t* getMAC();
-private:
-  bool connected;
-  uint8_t  mac[6];
-};
+#ifndef SUPERVISOR_SUPERSTRING_H
+#define SUPERVISOR_SUPERSTRING_H
 
 
-#endif //UNTITLED_WIFIMANAGER_H
+#include <vector>
+#include <string>
+
+typedef std::vector<std::string> StringList;
+
+StringList split(const std::string &s, char d);
+StringList splitCsvRespectingQuotes(const std::string& s, char delim=',');
+void removeLeading(std::string &s, const std::string &l);
+void removeLeading(std::string &s, char c);
+void removeTrailing(std::string &s, const std::string &l);
+void removeTrailing(std::string &s, char c);
+
+
+
+#endif //SUPERVISOR_SUPERSTRING_H

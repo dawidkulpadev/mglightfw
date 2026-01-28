@@ -21,27 +21,31 @@
 #ifndef UNTITLED_CONFIGMANAGER_H
 #define UNTITLED_CONFIGMANAGER_H
 
+#include <Preferences.h>
 #include "DeviceConfig.h"
 #include "Day.h"
-#include <ArduinoJson.h>
 
-#include "FS.h"
-#include <LittleFS.h>
+#define CONFIGMANAGER_KEY_PSK       "psk"
+#define CONFIGMANAGER_KEY_SSID      "ssid"
+#define CONFIGMANAGER_KEY_PICKLOCK  "picklock"
+#define CONFIGMANAGER_KEY_UID       "uid"
+#define CONFIGMANAGER_KEY_TIMEZONE  "tz"
+#define CONFIGMANAGER_KEY_ROLE      "role"
+
+#define CONFIGMANAGER_KEY_DLI       "dli"
+#define CONFIGMANAGER_KEY_DS        "ds"
+#define CONFIGMANAGER_KEY_DE        "de"
+#define CONFIGMANAGER_KEY_SSD       "ssd"
+#define CONFIGMANAGER_KEY_SRD       "srd"
+
 
 class ConfigManager {
 public:
-    static void init();
-    static bool readWifi(DeviceConfig *config);
-    static bool writeWifi(DeviceConfig *config);
-    static bool writeDay(Day *day);
-    static bool readDay(Day *day);
-    static bool clearWifiConfig();
-
-    static bool readCaStore(unsigned char *c) ;
-
-private:
-    static const char* wcfn; // WiFi config file name
-    static const char* dcfn; // Day config file name
+    static bool readDeviceConfig(Preferences *prefs, DeviceConfig *config);
+    static bool writeDeviceConfig(Preferences *prefs, DeviceConfig *config);
+    static bool writeDay(Preferences *prefs, Day *day);
+    static bool readDay(Preferences *prefs, Day *day);
+    static bool clearWifiConfig(Preferences *prefs);
 };
 
 

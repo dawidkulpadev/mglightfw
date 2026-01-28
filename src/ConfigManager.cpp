@@ -20,138 +20,115 @@
 
 #include "ConfigManager.h"
 
-const char* ConfigManager::wcfn = "/wifiConfig.json";
-const char* ConfigManager::dcfn = "/dayConfig.json";
+bool ConfigManager::readDeviceConfig(Preferences *prefs, DeviceConfig *config) {
+    config->setSsid("dlink3");
+    config->setPsk("sikakama2");
+    config->setUid("2");
+    config->setPicklock("test");
+    config->setTimezone("Europe/Warsaw");
+    config->setRole(DEVICE_CONFIG_ROLE_SERVER);
+    return true;
 
-void ConfigManager::init() {
-    if (!LittleFS.begin(true)) {
-        Serial.println("Failed to mount file system");
-    }
-}
-
-bool ConfigManager::readWifi(DeviceConfig *config) {
-    File configFile = LittleFS.open(ConfigManager::wcfn, "r");
-    if (!configFile) {
-        Serial.println("Failed to open wifi config file");
+    if( !prefs->isKey(CONFIGMANAGER_KEY_SSID) or
+        !prefs->isKey(CONFIGMANAGER_KEY_PSK) or
+        !prefs->isKey(CONFIGMANAGER_KEY_PICKLOCK) or
+        !prefs->isKey(CONFIGMANAGER_KEY_UID) or
+        !prefs->isKey(CONFIGMANAGER_KEY_TIMEZONE)){
         return false;
     }
 
-    size_t size = configFile.size();
-    if (size > 1024) {
-        Serial.println("Wifi config file size is too large");
-        return false;
-    }
+    char buf[256];
 
-    // Allocate a buffer to store contents of the file.
-    std::unique_ptr<char[]> buf(new char[size]);
+    // Read SSID
+    prefs->getString(CONFIGMANAGER_KEY_SSID, buf, 256);
+    config->setSsid(buf);
 
-    configFile.readBytes(buf.get(), size);
+    // Read psk
+    prefs->getString(CONFIGMANAGER_KEY_PSK, buf, 256);
+    config->setPsk(buf);
 
-    StaticJsonDocument<200> doc;
-    auto error = deserializeJson(doc, buf.get());
-    if (error) {
-        Serial.println("Failed to parse wifi config file");
-        return false;
-    }
+    // Read UId
+    prefs->getString(CONFIGMANAGER_KEY_UID, buf, 256);
+    config->setUid(buf);
 
-    config->setSsid(doc["ssid"]);
-    config->setPsk(doc["psk"]);
-    config->setUid(doc["uid"]);
-    config->setPicklock(doc["picklock"]);
-    config->setTimezone(doc["timezone"]);
+    // Read picklock
+    prefs->getString(CONFIGMANAGER_KEY_PICKLOCK, buf, 256);
+    config->setPicklock(buf);
 
-    Serial.print(config->getUid());
-    Serial.println(config->getPicklock());
+    // Read timezone
+    prefs->getString(CONFIGMANAGER_KEY_TIMEZONE, buf, 256);
+    config->setTimezone(buf);
+
+    // Read default role
+    buf[0]= prefs->getChar(CONFIGMANAGER_KEY_ROLE,  '0');
+    config->setRole(buf[0]);
 
     return true;
 }
 
-bool ConfigManager::writeWifi(DeviceConfig *config) {
-    StaticJsonDocument<200> doc;
-    doc["ssid"] = config->getSsid();
-    doc["psk"] = config->getPsk();
-    doc["uid"] = config->getUid();
-    doc["picklock"] = config->getPicklock();
-    doc["timezone"] = config->getTimezone();
-
-    File configFile = LittleFS.open(ConfigManager::wcfn, "w");
-    if (!configFile) {
-        Serial.println("Failed to open wifi config file for writing");
-        return false;
-    }
-
-    serializeJson(doc, configFile);
-    return true;
-}
-
-bool ConfigManager::writeDay(Day *day){
-    StaticJsonDocument<200> doc;
-    
-    doc["dli"] = std::to_string(day->getDli());
-    doc["ds"] = std::to_string(day->getDs());
-    doc["de"] = std::to_string(day->getDe());
-    doc["ssd"] = std::to_string(day->getSsd());
-    doc["srd"] = std::to_string(day->getSrd());
-
-    
-
-    File configFile = LittleFS.open(ConfigManager::dcfn, "w");
-    if (!configFile) {
-        Serial.println("Failed to open Day config file for writing");
-        return false;
-    }
-
-    serializeJson(doc, configFile);
-    return true;
-}
-
-bool ConfigManager::readDay(Day *day){
-    File configFile = LittleFS.open(ConfigManager::dcfn, "r");
-    if (!configFile) {
-        Serial.println("Failed to open Day config file");
-        return false;
-    }
-
-    size_t size = configFile.size();
-    if (size > 1024) {
-        Serial.println("Day config file size is too large");
-        return false;
-    }
-
-    // Allocate a buffer to store contents of the file.
-    std::unique_ptr<char[]> buf(new char[size]);
-
-    configFile.readBytes(buf.get(), size);
-
-    StaticJsonDocument<200> doc;
-    auto error = deserializeJson(doc, buf.get());
-    if (error) {
-        Serial.println("Failed to parse Day config file");
-        return false;
-    }
-
-    day->setDli(atoi(doc["dli"]));
-    day->setDs(atoi(doc["ds"]));
-    day->setDe(atoi(doc["de"]));
-    day->setSsd(atoi(doc["ssd"]));
-    day->setSrd(atoi(doc["srd"]));
+bool ConfigManager::writeDeviceConfig(Preferences *prefs, DeviceConfig *config) {
+    Serial.println(std::to_string(strlen(config->getSsid())).c_str());
+    Serial.println(std::to_string(prefs->putString(CONFIGMANAGER_KEY_SSID, config->getSsid())).c_str());
+    prefs->putString(CONFIGMANAGER_KEY_PSK, config->getPsk());
+    prefs->putString(CONFIGMANAGER_KEY_UID, config->getUid());
+    prefs->putString(CONFIGMANAGER_KEY_PICKLOCK, config->getPicklock());
+    prefs->putString(CONFIGMANAGER_KEY_TIMEZONE, config->getTimezone());
+    prefs->putChar(CONFIGMANAGER_KEY_ROLE, (int8_t)config->getRole());
 
     return true;
 }
 
-bool ConfigManager::clearWifiConfig() {
-    return LittleFS.remove(ConfigManager::wcfn);
-}
-
-bool ConfigManager::readCaStore(unsigned char *c) {
-    File casFile= LittleFS.open("cert.store", FILE_READ);
-
-    if(casFile) {
-        c = new unsigned char[casFile.size()];
-        casFile.read(c, casFile.size());
-    } else {
-        return false;
-    }
+bool ConfigManager::writeDay(Preferences *prefs, Day *day){
+    prefs->putString(CONFIGMANAGER_KEY_DLI, std::to_string(day->getDli()).c_str());
+    prefs->putString(CONFIGMANAGER_KEY_DS, std::to_string(day->getDs()).c_str());
+    prefs->putString(CONFIGMANAGER_KEY_DE, std::to_string(day->getDe()).c_str());
+    prefs->putString(CONFIGMANAGER_KEY_SSD, std::to_string(day->getSsd()).c_str());
+    prefs->putString(CONFIGMANAGER_KEY_SRD, std::to_string(day->getSrd()).c_str());
 
     return true;
 }
+
+bool ConfigManager::readDay(Preferences *prefs, Day *day){
+    if(!prefs->isKey(CONFIGMANAGER_KEY_DLI) or
+       !prefs->isKey(CONFIGMANAGER_KEY_DS) or
+       !prefs->isKey(CONFIGMANAGER_KEY_DE) or
+       !prefs->isKey(CONFIGMANAGER_KEY_SSD) or
+       !prefs->isKey(CONFIGMANAGER_KEY_SRD)){
+        return false;
+    }
+
+    char buf[32];
+
+    // Read DLI
+    prefs->getString(CONFIGMANAGER_KEY_DLI, buf, 32);
+    day->setDli(std::stoi(buf));
+
+    // Read DS
+    prefs->getString(CONFIGMANAGER_KEY_DS, buf, 32);
+    day->setDs(std::stoi(buf));
+
+    // Read DE
+    prefs->getString(CONFIGMANAGER_KEY_DE, buf, 32);
+    day->setDe(std::stoi(buf));
+
+    // Read SSD
+    prefs->getString(CONFIGMANAGER_KEY_SSD, buf, 32);
+    day->setSsd(std::stoi(buf));
+
+    // Read SRD
+    prefs->getString(CONFIGMANAGER_KEY_SRD, buf, 32);
+    day->setSrd(std::stoi(buf));
+
+    return true;
+}
+
+bool ConfigManager::clearWifiConfig(Preferences *prefs) {
+    prefs->remove(CONFIGMANAGER_KEY_SSID);
+    prefs->remove(CONFIGMANAGER_KEY_PSK);
+    prefs->remove(CONFIGMANAGER_KEY_UID);
+    prefs->remove(CONFIGMANAGER_KEY_PICKLOCK);
+    prefs->remove(CONFIGMANAGER_KEY_TIMEZONE);
+    prefs->remove(CONFIGMANAGER_KEY_ROLE);
+    return true;
+}
+
