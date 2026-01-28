@@ -25,7 +25,7 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
                 static_cast<BLELNServer*>(arg)->worker();
                 Serial.println("[D] BLELNServer -  rx worker stopped");
                 vTaskDelete(nullptr);
-            }, "BLELNWorker", 4096, this, 5, nullptr, 1);
+            }, "BLELNWorker", 4096, this, 5, &workerTaskHandle, 1);
 
     // Initialize encryption salt (or find in memory)
     size_t have = prefs->getBytesLength("salt");
@@ -61,9 +61,13 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
     chDataToSer  = svc->createCharacteristic(BLELNBase::DATA_TO_SER_UUID, NIMBLE_PROPERTY::WRITE);// | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
 
     // Set characteristics callbacks
-    chKeyToCli->setCallbacks(new KeyTxClb(this));
-    chKeyToSer->setCallbacks(new KeyRxClb(this));
-    chDataToSer->setCallbacks(new DataRxClb(this));
+    keyTxClb = new KeyTxClb(this);
+    keyRxClb = new KeyRxClb(this);
+    dataRxClb = new DataRxClb(this);
+
+    chKeyToCli->setCallbacks(keyTxClb);
+    chKeyToSer->setCallbacks(keyRxClb);
+    chDataToSer->setCallbacks(dataRxClb);
 
     // Start BLELN service
     svc->start();
@@ -79,11 +83,15 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
 
 void BLELNServer::stop() {
     NimBLEDevice::stopAdvertising();
+
     // Stop rx worker
     runWorker= false;
 
-    if(workerActionQueue)
-        xQueueReset(workerActionQueue);
+    if (workerTaskHandle != nullptr) {
+        while (workerTaskHandle != nullptr) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
 
     // Disconnect every client
     if (srv!=nullptr) {
@@ -95,24 +103,32 @@ void BLELNServer::stop() {
         }
     }
 
-    // Remove callbacks
-    if (chKeyToCli)
-        chKeyToCli->setCallbacks(nullptr);
-    if (chKeyToSer)
-        chKeyToSer->setCallbacks(nullptr);
-    if (chDataToSer)
-        chDataToSer ->setCallbacks(nullptr);
-
-    // Clear semaphores
-    if(clisMtx){
-        vSemaphoreDelete(clisMtx);
-        clisMtx = nullptr;
+    if(workerActionQueue) {
+        xQueueReset(workerActionQueue);
+        vQueueDelete(workerActionQueue);
+        workerActionQueue = nullptr;
     }
+
+
+    // Remove callbacks
+    if (chKeyToCli) chKeyToCli->setCallbacks(nullptr);
+    if (chKeyToSer) chKeyToSer->setCallbacks(nullptr);
+    if (chDataToSer) chDataToSer->setCallbacks(nullptr);
+
+    if (keyTxClb) { delete keyTxClb; keyTxClb = nullptr; }
+    if (keyRxClb) { delete keyRxClb; keyRxClb = nullptr; }
+    if (dataRxClb) { delete dataRxClb; dataRxClb = nullptr; }
 
     // Clear context list
     if(xSemaphoreTake(clisMtx, pdMS_TO_TICKS(1000))==pdTRUE) {
         connCtxs.clear();
         xSemaphoreGive(clisMtx);
+    }
+
+    // Clear semaphores
+    if(clisMtx){
+        vSemaphoreDelete(clisMtx);
+        clisMtx = nullptr;
     }
 
     // Reset pointer and callback
@@ -121,6 +137,7 @@ void BLELNServer::stop() {
     chDataToCli  = nullptr;
     chDataToSer  = nullptr;
     srv       = nullptr;
+
     onMsgReceived = nullptr;
 
     NimBLEDevice::deinit(true);
@@ -140,11 +157,12 @@ void BLELNServer::startOtherServerSearch(uint32_t durationMs, const std::string 
 bool BLELNServer::getConnContext(uint16_t h, BLELNConnCtx** ctx) {
     *ctx = nullptr;
 
-    for (auto &c : connCtxs){
-        if (c.getHandle() == h){
-            *ctx = &c;
-            break;
-        }
+    auto it= std::find_if(connCtxs.begin(), connCtxs.end(),[h](const BLELNConnCtx &c){
+       return c.getHandle()==h;
+    });
+
+    if(it!=connCtxs.end()){
+        *ctx= &(*it);
     }
 
     return *ctx!= nullptr;
@@ -266,7 +284,7 @@ void BLELNServer::worker_registerClient(uint16_t h) {
     if (!getConnContext(h, &c)) {
 
         connCtxs.emplace_back(h);
-        c = (connCtxs.end() - 1).base();
+        c = &connCtxs.back();
 
         if (!c->makeSessionKey()) {
             Serial.println("[E] BLELNServer - ECDH keygen fail");
@@ -275,17 +293,9 @@ void BLELNServer::worker_registerClient(uint16_t h) {
 }
 
 void BLELNServer::worker_deleteClient(uint16_t h) {
-    int removeIdx = -1;
-
-    for (int i = 0; i < connCtxs.size(); i++) {
-        if (connCtxs[i].getHandle() == h) {
-            removeIdx = i;
-            break;
-        }
-    }
-    if (removeIdx >= 0) {
-        connCtxs.erase(connCtxs.begin() + removeIdx);
-    }
+    connCtxs.remove_if([h](const BLELNConnCtx& c){
+        return c.getHandle()==h;
+    });
 }
 
 void BLELNServer::worker_processSubscription(uint16_t h) {

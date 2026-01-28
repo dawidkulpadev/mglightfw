@@ -12,6 +12,8 @@
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 
+#include <list>
+
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -46,8 +48,12 @@ private:
     // NimBLE
     NimBLEServer* srv = nullptr;
     NimBLECharacteristic *chKeyToCli=nullptr, *chKeyToSer=nullptr, *chDataToCli=nullptr, *chDataToSer=nullptr;
+    NimBLECharacteristicCallbacks* keyTxClb = nullptr;
+    NimBLECharacteristicCallbacks* keyRxClb = nullptr;
+    NimBLECharacteristicCallbacks* dataRxClb = nullptr;
 
     // Multithreading
+    TaskHandle_t workerTaskHandle = nullptr;
     SemaphoreHandle_t clisMtx = nullptr;
     QueueHandle_t workerActionQueue;
     bool runWorker;
@@ -59,7 +65,7 @@ private:
 
     // BLELN
     BLELNAuthentication authStore;
-    std::vector<BLELNConnCtx> connCtxs;
+    std::list<BLELNConnCtx> connCtxs;
 
     std::string serviceUUID;
     bool scanning = false;
