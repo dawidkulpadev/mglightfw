@@ -47,7 +47,8 @@ private:
     bool discover();
     bool handshake(uint8_t *v, size_t vlen);
 
-    void onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length,
+    void onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic* pBLERemoteCharacteristic,
+                       __attribute__((unused)) uint8_t* pData, __attribute__((unused)) __attribute__((unused)) size_t length,
                        __attribute__((unused)) bool isNotify);
     void onDataTxNotify(NimBLERemoteCharacteristic* pBLERemoteCharacteristic, __attribute__((unused)) uint8_t* pData,
                         __attribute__((unused)) size_t length, __attribute__((unused)) bool isNotify);
@@ -67,9 +68,9 @@ private:
 
     BLELNConnCtx *connCtx= nullptr;
     BLELNAuthentication authStore;
-    //SemaphoreHandle_t connMtx = nullptr;
 
     bool runWorker=false;
+    TaskHandle_t workerTaskHandle = nullptr;
 };
 
 

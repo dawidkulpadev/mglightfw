@@ -29,26 +29,23 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
                 static_cast<BLELNClient *>(arg)->worker();
                 vTaskDelete(nullptr);
             },
-            "BLELNrx", 4096, this, 5, nullptr, 1);
+            "BLELNrx", 4096, this, 5, &workerTaskHandle, 1);
 }
 
 void BLELNClient::stop() {
     if (scanning) {
         NimBLEScan* scan = NimBLEDevice::getScan();
-        if(scan)
-            scan->stop();
+        if(scan) scan->stop();
         scanning = false;
         onScanResult = nullptr;
     }
 
-    runWorker= false;
-    if(workerActionQueue)
-        xQueueReset(workerActionQueue);
-
-    if(chKeyToCli)
-        chKeyToCli->unsubscribe(true);
-    if(chDataToCli)
-        chDataToCli ->unsubscribe(true);
+    runWorker = false;
+    if (workerTaskHandle != nullptr) {
+        while (workerTaskHandle != nullptr) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
 
     if(client!= nullptr){
         client->disconnect();
@@ -56,14 +53,30 @@ void BLELNClient::stop() {
         client= nullptr;
     }
 
-    chKeyToCli = nullptr;
-    chKeyToSer = nullptr;
+    if(workerActionQueue) {
+        BLELNWorkerAction pkt{};
+        while (xQueueReceive(workerActionQueue, &pkt, 0) == pdPASS) {
+            free(pkt.d);
+        }
+        vQueueDelete(workerActionQueue); // Usuń kolejkę
+        workerActionQueue = nullptr;
+    }
+
+    if(chKeyToCli) chKeyToCli->unsubscribe();
+    if(chDataToCli) chDataToCli->unsubscribe();
+
+    chKeyToCli   = nullptr;
+    chKeyToSer   = nullptr;
     chDataToCli  = nullptr;
     chDataToSer  = nullptr;
-    svc       = nullptr;
+    svc          = nullptr;
+
+    if(connCtx) {
+        delete connCtx;
+        connCtx = nullptr;
+    }
 
     onMsgRx = nullptr;
-
     NimBLEDevice::deinit(true);
 }
 
@@ -181,7 +194,9 @@ void BLELNClient::onPassKeyEntry(NimBLEConnInfo &connInfo) {
     NimBLEDevice::injectPassKey(connInfo, 123456);
 }
 
-void BLELNClient::onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic *ch, uint8_t *pData, size_t length,
+void BLELNClient::onKeyTxNotify(__attribute__((unused)) NimBLERemoteCharacteristic *ch,
+                                __attribute__((unused)) uint8_t *pData,
+                                __attribute__((unused)) size_t length,
                                 __attribute__((unused)) bool isNotify) {
     NimBLEAttValue v= ch->getValue();
 
@@ -270,7 +285,10 @@ void BLELNClient::worker_registerConnection(uint16_t h) {
 }
 
 void BLELNClient::worker_deleteConnection() {
-    delete connCtx;
+    if (connCtx) {
+        delete connCtx;
+        connCtx = nullptr; // Ważne!
+    }
 }
 
 void BLELNClient::worker_sendMessage(uint8_t *data, size_t dataLen) {
@@ -407,8 +425,8 @@ void BLELNClient::onConnectFail(NimBLEClient *pClient, int reason) {
 
 void BLELNClient::disconnect(uint8_t reason) {
     Serial.printf("[D] BLELNClient - disconnected, reason: %d\r\n", reason);
-    chKeyToCli->unsubscribe();
-    chDataToCli->unsubscribe();
+    if(chKeyToCli) chKeyToCli->unsubscribe();
+    if(chDataToCli) chDataToCli->unsubscribe();
 
     svc= nullptr;
     chKeyToCli = nullptr;
@@ -416,8 +434,9 @@ void BLELNClient::disconnect(uint8_t reason) {
     chDataToCli  = nullptr;
     chDataToSer  = nullptr;
 
-    client->disconnect(reason);
-    NimBLEDevice::deleteClient(client);
+    if(client) {
+        client->disconnect();
+    }
 }
 
 /*** Connection context not protected! */
