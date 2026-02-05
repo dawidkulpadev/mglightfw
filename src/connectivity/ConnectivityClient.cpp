@@ -86,7 +86,7 @@ void ConnectivityClient::loop() {
         if(connectedFor == ConnectedFor::APITalk){
             char buf[128];
             if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(50))==pdTRUE){
-                sprintf(buf, "$ATRQ,1,%s,%c,%s",meApiTalkPoint.c_str(),meApiTalkMethod,meApiTalkData.c_str());
+                sprintf(buf, "$ATRQ,1,%s,%c,%s,%s,%s",meApiTalkPoint.c_str(),meApiTalkMethod,meApiTalkMAC.c_str(),meApiTalkPicklock.c_str(),meApiTalkData.c_str());
                 xSemaphoreGive(meApiTalkMutex);
 
                 blelnClient.sendEncrypted(buf);
@@ -215,10 +215,12 @@ void ConnectivityClient::switchToServer() {
 }
 
 
-void ConnectivityClient::startAPITalk(const std::string& apiPoint, char method, const std::string& data) {
+void ConnectivityClient::startAPITalk(const std::string& apiPoint, char method, const std::string &mac, const std::string &picklock, const std::string& data) {
     if(xSemaphoreTake(meApiTalkMutex, pdMS_TO_TICKS(100))==pdTRUE) {
         meApiTalkPoint = apiPoint;
         meApiTalkMethod = method;
+        meApiTalkMAC= mac;
+        meApiTalkPicklock= picklock;
         meApiTalkData = data;
         meApiTalkRequested = true;
         xSemaphoreGive(meApiTalkMutex);

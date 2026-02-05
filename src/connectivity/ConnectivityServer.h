@@ -39,6 +39,8 @@ struct APITalkRequest {
     uint16_t h;
     uint16_t id;
     char method;
+    char *mac; // malloc/free
+    char *picklock; // malloc/free
     char *apiPoint; // malloc/free
     char *data; // malloc/free
 };
@@ -60,7 +62,7 @@ public:
                        Connectivity::RequestModeChangeCb requestModeChange);
     void loop();
     void apiTalksWorker();
-    void requestApiTalk(char method, const std::string &point, const std::string &data);
+    void requestApiTalk(char method, const char *mac, const char *picklock, const std::string &point, const std::string &data);
 private:
     Preferences *prefs;
     DeviceConfig *config;
@@ -81,7 +83,7 @@ private:
     unsigned long lastServerSearch= 0;
 
     // API Talk mathods
-    void appendToAPITalksRequestQueue(uint16_t h, uint16_t id, const std::string& apiPoint, char method, const std::string &data);
+    void appendToAPITalksRequestQueue(uint16_t h, uint16_t id, const std::string& apiPoint, char method, const std::string &mac, const std::string &picklock, const std::string &data);
     void appendToAPITalksResponseQueue(uint16_t h, uint16_t id, uint8_t errc, uint16_t respCode, const String& data);
 
     // API Talk variables

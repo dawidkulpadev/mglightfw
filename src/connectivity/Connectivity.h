@@ -45,7 +45,7 @@ public:
     void start(uint8_t devMode, DeviceConfig *devConfig, Preferences *preferences,
                const OnApiResponseCb &onApiResponse);
     void loop();
-    void startAPITalk(const std::string& apiPoint, char method, const std::string& data); // Talk with API about me
+    void startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, char* picklock, const std::string& data); // Talk with API about me
 
 private:
     Preferences *prefs;
@@ -56,6 +56,8 @@ private:
     ConnectivityConfig *conConfig= nullptr;
 
     WiFiManager wiFiManager;
+
+    char definedRole=DEVICE_CONFIG_ROLE_AUTO;
 
     // State
     ConnectivityMode conMode= ConnectivityMode::ClientMode;

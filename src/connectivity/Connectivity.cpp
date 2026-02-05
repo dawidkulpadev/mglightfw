@@ -42,16 +42,17 @@ void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *
             this->conMode= m;
         });
 
-        /* bool rhbs= preferences->getBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, false); // Recently has been in server mode
-        if(rhbs) {
-            Serial.println("Connectivity - Recently has been server. Start as server");
-            conMode = ConnectivityMode::ServerMode;
+        definedRole= devConfig->getRole();
+
+        if(definedRole==DEVICE_CONFIG_ROLE_SERVER){
+            Serial.println("[I] Connectivity - Start as server");
+            conMode= ConnectivityMode::ServerMode;
         } else {
-            Serial.println("Connectivity - Recently has been client. Start as client");
-            conMode = ConnectivityMode::ClientMode;
-        } */
-        Serial.println("[I] Connectivity - Start as client");
-        conMode = ConnectivityMode::ClientMode;
+            Serial.println("[I] Connectivity - Start as client");
+            conMode= ConnectivityMode::ClientMode;
+        }
+
+        conMode= ConnectivityMode::ServerMode;
      }
 }
 
@@ -74,13 +75,16 @@ void Connectivity::loop() {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-void Connectivity::startAPITalk(const std::string& apiPoint, char method, const std::string& data) {
+void Connectivity::startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, char* picklock, const std::string& data) {
     if(conMode==ConnectivityMode::ClientMode) {
         prefs->putBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, false);
-        conClient->startAPITalk(apiPoint, method, data);
-    } else if(conMode==ConnectivityMode::ServerMode)
+        //conClient->startAPITalk(apiPoint, method, data);
+    } else if(conMode==ConnectivityMode::ServerMode) {
         prefs->putBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, true);
-        conServer->requestApiTalk(method, apiPoint, data);
+        char macBuf[13];
+        sprintf(macBuf, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        conServer->requestApiTalk(method, macBuf, picklock, apiPoint, data);
+    }
 }
 
 

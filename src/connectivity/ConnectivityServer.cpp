@@ -115,7 +115,7 @@ void ConnectivityServer::onMessageReceived(uint16_t cliH, const std::string &msg
             char method = parts[3].c_str()[0];
 
             if (method == 'P' or method == 'G')
-                appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4]);
+                appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4], parts[5], parts[6]);
         }
     } else if(parts[0]=="$NTP"){
         auto nows= static_cast<uint32_t>(time(nullptr));
@@ -169,15 +169,20 @@ void ConnectivityServer::appendToAPITalksResponseQueue(uint16_t h, uint16_t id, 
 }
 
 void ConnectivityServer::appendToAPITalksRequestQueue(uint16_t h, uint16_t id, const std::string &apiPoint,
-                                                      char method, const std::string &data) {
+                                                      char method, const std::string &mac, const std::string &picklock,
+                                                      const std::string &data) {
     if(apiTalksRequestQueue!= nullptr) {
         auto *apiPointHeapBuf = (char *) malloc(apiPoint.size() + 1);
         auto *dataHeapBuf = (char *) malloc(data.size() + 1);
-        if (!apiPointHeapBuf and !dataHeapBuf) return;
+        auto *macHeapBuf = (char *) malloc(mac.size()+1);
+        auto *picklockHeapBuf = (char *) malloc(picklock.size()+1);
+        if (!apiPointHeapBuf and !dataHeapBuf and !macHeapBuf and !picklockHeapBuf) return;
         strcpy(apiPointHeapBuf, apiPoint.c_str());
         strcpy(dataHeapBuf, data.c_str());
+        strcpy(picklockHeapBuf, picklock.c_str());
+        strcpy(macHeapBuf, mac.c_str());
 
-        APITalkRequest pkt{h, id, method, apiPointHeapBuf, dataHeapBuf};
+        APITalkRequest pkt{h, id, method, macHeapBuf, picklockHeapBuf, apiPointHeapBuf, dataHeapBuf};
         if (xQueueSend(apiTalksRequestQueue, &pkt, 0) != pdPASS) {
             free(apiPointHeapBuf);
             free(dataHeapBuf);
@@ -217,7 +222,10 @@ void ConnectivityServer::apiTalksWorker() {
             if (https.begin(*client, httpReq.c_str())) {  // HTTPS
                 int httpCode = 0;
                 if (pkt.method == 'P') {
-                    https.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                    https.addHeader("x-device-id", pkt.mac);
+                    https.addHeader("x-device-picklock", pkt.picklock);
+                    https.addHeader("Content-Type", "application/json");
+
                     httpCode = https.POST(pkt.data);
                 } else if (pkt.method == 'G') {
                     httpCode = https.GET();
@@ -240,6 +248,8 @@ void ConnectivityServer::apiTalksWorker() {
 
             free(pkt.apiPoint);
             free(pkt.data);
+            free(pkt.mac);
+            free(pkt.picklock);
         }
 
         if(uxQueueMessagesWaiting(apiTalksRequestQueue)>0){
@@ -257,6 +267,6 @@ void ConnectivityServer::apiTalksWorker() {
     }
 }
 
-void ConnectivityServer::requestApiTalk(char method, const std::string &point, const std::string &data) {
-    appendToAPITalksRequestQueue(UINT16_MAX, UINT16_MAX, point, method, data);
+void ConnectivityServer::requestApiTalk(char method, const char *mac, const char *picklock, const std::string &point, const std::string &data) {
+    appendToAPITalksRequestQueue(UINT16_MAX, UINT16_MAX, point, method, mac, picklock, data);
 }

@@ -123,7 +123,7 @@ bool Encryption::decryptAESGCM(const uint8_t *ct, size_t ctLen, const uint8_t *i
     out->resize(ctLen);
     int rc = mbedtls_gcm_auth_decrypt(&gcm, ctLen,
                                       iv, 12,
-                                      aad, sizeof(aad),
+                                      aad, 12,
                                       tag, 16,
                                       ct, (unsigned char*)out->data());
     mbedtls_gcm_free(&gcm);
@@ -144,7 +144,7 @@ bool Encryption::encryptAESGCM(const std::string *in, uint8_t *iv, uint8_t *tag,
     }
 
     if (mbedtls_gcm_crypt_and_tag(&g, MBEDTLS_GCM_ENCRYPT, in->length(),
-                                  iv, 12, aad, sizeof(aad),
+                                  iv, 12, aad, 12,
                                   reinterpret_cast<const unsigned char *>(in->c_str()), (uint8_t*)out->data(), 16, tag) != 0) {
         mbedtls_gcm_free(&g);
         return false;

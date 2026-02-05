@@ -9,9 +9,9 @@ ConnectivityConfig::ConnectivityConfig(BLELNServer *blelnServer, Preferences *pr
     prefs= preferences;
     config= deviceConfig;
     state= ConfigModeState::Start;
-    WiFi.macAddress(mac);
+    uint64_t fmac= ESP.getEfuseMac();
+    memcpy(mac, reinterpret_cast<const uint8_t *>(fmac), 6);
 }
-
 
 void ConnectivityConfig::loop() {
     if(state==ConfigModeState::Start){
@@ -44,6 +44,8 @@ void ConnectivityConfig::loop() {
                         uint8_t *macc= this->getMAC();
                         sprintf(str_mac, "%02X%02X%02X%02X%02X%02X", macc[0], macc[1], macc[2], macc[3], macc[4], macc[5]);
                         sprintf(resp, "$CONFIG,VAL,mac,%s", str_mac);
+                    } else if(parts[2]=="role"){
+                        sprintf(resp, "$CONFIG,VAL,tzone,%c",this->config->getRole());
                     }
                 } else if(parts[1]=="SET"){
                     if(parts[2]=="wssid"){
@@ -61,6 +63,9 @@ void ConnectivityConfig::loop() {
                     } else if(parts[2]=="uid"){
                         sprintf(resp,"$CONFIG,SETOK,uid");
                         this->config->setUid(parts[3].c_str());
+                    } else if(parts[2]=="role"){
+                        sprintf(resp,"$CONFIG,SETOK,role");
+                        this->config->setRole(parts[3][0]);
                     }
                 }
 
