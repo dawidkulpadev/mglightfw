@@ -53,9 +53,7 @@
 #include "config.h"
 #include "connectivity/Connectivity.h"
 
-#define WIFI_RUN_INTERVAL       120
 #define API_RUN_INTERVAL        600
-#define DAY_UPDATE_INTERVAL     1
 #define API_TALK_INTERVAL       60
 
 int deviceMode;

@@ -109,7 +109,7 @@ void ConnectivityClient::loop() {
         // Start WiFi check
         Serial.println("Client mode - No server, checking WiFi...");
         state=State::WiFiChecking;
-        wm->startConnect(config->getTimezone(), "dlink3", "sikakama2");
+        wm->startConnect(config->getTimezone(), config->getSsid(), config->getPsk());
     } else if(state == State::WiFiChecking){
         if(wm->isConnected()){
             state= State::WiFiConnected;
@@ -117,6 +117,7 @@ void ConnectivityClient::loop() {
             state= State::WiFiConnectFailed;
         }
     } else if(state == State::WiFiConnected){
+        Serial.println("[D] Client mode - WiFi connected. Switching to server");
         switchToServer();
     } else if(state == State::WiFiConnectFailed){
         state= State::Idle;
@@ -207,6 +208,7 @@ void ConnectivityClient::finish() {
     }
     blelnClient.stop();
     state= State::Init;
+    Serial.println("[D] Client mode - Exited!");
 }
 
 void ConnectivityClient::switchToServer() {

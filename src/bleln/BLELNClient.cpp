@@ -25,6 +25,10 @@
 #include "SuperString.h"
 
 void BLELNClient::start(const std::string &name, std::function<void(const std::string&)> onServerResponse) {
+    if (workerTaskHandle != nullptr) {
+        stop();
+    }
+
     NimBLEDevice::init(name);
     NimBLEDevice::setSecurityAuth(true,true,true);
     NimBLEDevice::setSecurityIOCap(BLE_HS_IO_KEYBOARD_ONLY);
@@ -57,10 +61,15 @@ void BLELNClient::stop() {
     }
 
     runWorker = false;
+    uint32_t startWait = millis();
+    while (workerTaskHandle != nullptr && (millis() - startWait < 5000)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
     if (workerTaskHandle != nullptr) {
-        while (workerTaskHandle != nullptr) {
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
+        Serial.println("[E] BLELNClient - Worker stuck, killing force");
+        vTaskDelete(workerTaskHandle);
+        workerTaskHandle = nullptr;
     }
 
     if(client!= nullptr){
@@ -72,11 +81,13 @@ void BLELNClient::stop() {
     if(workerActionQueue) {
         BLELNWorkerAction pkt{};
         while (xQueueReceive(workerActionQueue, &pkt, 0) == pdPASS) {
-            free(pkt.d);
+            if(pkt.d)
+                free(pkt.d);
         }
         vQueueDelete(workerActionQueue); // Usuń kolejkę
         workerActionQueue = nullptr;
     }
+
 
     if(chKeyToCli) chKeyToCli->unsubscribe();
     if(chDataToCli) chDataToCli->unsubscribe();
@@ -284,6 +295,8 @@ void BLELNClient::worker() {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
+
+    workerTaskHandle = nullptr;
 }
 
 void BLELNClient::worker_registerConnection(uint16_t h) {

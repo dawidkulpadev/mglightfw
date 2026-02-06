@@ -102,11 +102,15 @@ void BLELNServer::stop() {
 
     // Stop rx worker
     runWorker= false;
+    uint32_t startWait = millis();
+    while (workerTaskHandle != nullptr && (millis() - startWait < 5000)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     if (workerTaskHandle != nullptr) {
-        while (workerTaskHandle != nullptr) {
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
+        Serial.println("[E] BLELNServer - Worker stuck, killing force");
+        vTaskDelete(workerTaskHandle);
+        workerTaskHandle = nullptr;
     }
 
     // Disconnect every client
@@ -287,6 +291,7 @@ void BLELNServer::worker() {
     }
 
     worker_cleanup();
+    workerTaskHandle= nullptr;
 }
 
 

@@ -77,7 +77,7 @@ void ConnectivityServer::loop() {
         } else if (wm->hasFailed()) {
             // TODO: Become client
         } else if(!wm->isRunning()){
-            wm->startConnect(config->getTimezone(), "dlink3", "sikakama2");
+            wm->startConnect(config->getTimezone(), config->getSsid(), config->getPsk());
         }
     } else if(state==ServerModeState::OtherBLELNServerFound){
         handleAPIResponse();
