@@ -141,6 +141,8 @@ bool BLELNSessionEnc::encryptMessage(const std::string &in, std::string &out) {
     *a++ = (uint8_t)((myEpoch >> 16) & 0xFF);
     *a   = (uint8_t)((myEpoch >> 24) & 0xFF);
 
+
+
     myLastCtr++;
     uint8_t ctrBE[4] = {
             (uint8_t)((myLastCtr>>24)&0xFF), (uint8_t)((myLastCtr>>16)&0xFF),
@@ -152,6 +154,8 @@ bool BLELNSessionEnc::encryptMessage(const std::string &in, std::string &out) {
     std::string ct;
     ct.resize(in.length());
     uint8_t tag[16];
+
+
 
     if(!Encryption::encryptAESGCM(&in, iv, tag, aad, &ct, sessKey_m2f)){
         return false;

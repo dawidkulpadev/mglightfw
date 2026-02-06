@@ -59,26 +59,26 @@ BLELNSessionEnc *BLELNConnCtx::getSessionEnc() {
 }
 
 void BLELNConnCtx::setCertData(uint8_t *macAddress, uint8_t *publicKey) {
-    memcpy(mac, macAddress, 6);
-    memcpy(pubKey, publicKey, BLELN_DEV_PUB_KEY_LEN);
+    memcpy(mac6, macAddress, 6);
+    memcpy(pubKey64, publicKey, BLELN_DEV_PUB_KEY_LEN);
 }
 
 void BLELNConnCtx::generateTestNonce() {
-    Encryption::random_bytes(testNonce, BLELN_TEST_NONCE_LEN);
+    Encryption::random_bytes(testNonce48, BLELN_TEST_NONCE_LEN);
 }
 
 
 bool BLELNConnCtx::verifyChallengeResponseAnswer(uint8_t *nonceSign) {
-    return Encryption::verifySign_ECDSA_P256(testNonce, BLELN_TEST_NONCE_LEN, nonceSign,
-                                             BLELN_DEV_SIGN_LEN, pubKey, BLELN_DEV_PUB_KEY_LEN);
+    return Encryption::verifySign_ECDSA_P256(testNonce48, BLELN_TEST_NONCE_LEN, nonceSign,
+                                             BLELN_DEV_SIGN_LEN, pubKey64, BLELN_DEV_PUB_KEY_LEN);
 }
 
 uint8_t *BLELNConnCtx::getTestNonce() {
-    return testNonce;
+    return testNonce48;
 }
 
 std::string BLELNConnCtx::getTestNonceBase64() {
-    return Encryption::base64Encode(testNonce, BLELN_TEST_NONCE_LEN);
+    return Encryption::base64Encode(testNonce48, BLELN_TEST_NONCE_LEN);
 }
 
 unsigned long BLELNConnCtx::getTimeOfLife() const {

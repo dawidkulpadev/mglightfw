@@ -77,7 +77,6 @@ private:
     // Encryption
     uint8_t g_psk_salt[32];
     uint32_t g_epoch = 0;
-    uint32_t g_lastRotateMs = 0;
 
     // BLELN
     BLELNAuthentication authStore;

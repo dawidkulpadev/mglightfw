@@ -24,6 +24,8 @@
 #define DEVICE_MODE_CONFIG             1
 #define DEVICE_MODE_NORMAL             2
 
+#define PICKLOCK_LENGTH     12
+
 const std::string api_url="https://dawidkulpa.pl/apis/miogiapicco/";
 
 

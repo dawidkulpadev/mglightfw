@@ -44,7 +44,7 @@ public:
 
 
     void loop();
-    void startAPITalk(const std::string& apiPoint, char method, const std::string& data); // Talk with API about me
+    void startAPITalk(const std::string& apiPoint, char method, const std::string &mac, const std::string &picklock, const std::string& data); // Talk with API about me
 private:
     DeviceConfig *config;
 
@@ -69,6 +69,8 @@ private:
     // My API Talk variables
     SemaphoreHandle_t meApiTalkMutex;
     bool meApiTalkRequested= false;
+    std::string meApiTalkMAC;
+    std::string meApiTalkPicklock;
     std::string meApiTalkData;
     std::string meApiTalkPoint;
     char meApiTalkMethod='N';

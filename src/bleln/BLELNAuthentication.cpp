@@ -99,11 +99,6 @@ bool BLELNAuthentication::verifyCert(const std::string &cert, const std::string 
     return r;
 }
 
-void BLELNAuthentication::signData(std::string &d, uint8_t *out) {
-    Encryption::signData_ECDSA_P256((const uint8_t *) d.data(), d.size(),
-                                    myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
-}
-
 void BLELNAuthentication::signData(const uint8_t *d, size_t dlen, uint8_t *out) {
     Encryption::signData_ECDSA_P256(d, dlen,
                                     myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);

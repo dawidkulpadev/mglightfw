@@ -290,8 +290,6 @@ void BLELNServer::worker() {
 }
 
 
-
-
 /// *************** PRIVATE - Methods ***************
 
 void BLELNServer::worker_registerClient(uint16_t h) {
@@ -417,7 +415,6 @@ void BLELNServer::worker_processKeyRx(uint16_t h, uint8_t *data, size_t dataLen)
                 }
             }
         } else if (cx->getState() == BLELNConnCtx::State::ChallengeResponseSer) {
-            // If I'm waiting for clients challenge response
             std::string plainKeyMsg;
             if (cx->getSessionEnc()->decryptMessage(data, dataLen, plainKeyMsg)) {
                 StringList parts = splitCsvRespectingQuotes(plainKeyMsg);
