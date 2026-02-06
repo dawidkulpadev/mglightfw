@@ -1,18 +1,6 @@
 # MioGiapicco Light Firmware Gen 2
 Firmware for the ESP32-C3 chip of the MioGiapicco Light device, version 4 or higher.
 
-## NVM:
-### _cert_ namespace keys
-* pc_sign - Product certificate sign
-* manu_pub - Manufacture public key
-* dev_pub - devices public key
-* dev_priv - devices private key
-
-
-Product certificate:
-- Product generation    (string - number)
-- Device ID             (devices mac address) (base64)
-- Devices public key    (base64)
 
 
 Wszystko przesyłane kanałem DataRx i DataTx musi być obsługiwane przez "std::string" (ascii) (przed zaszyfrowaniem)
@@ -66,3 +54,39 @@ options:
 example:
   python3 ./nvs_flash.py --port /dev/ttyUSB0 ./70041d262cb0.bin
 ```
+
+# Architecture
+
+## Device certificate
+An ASCII string consisting of the following values separated by semicolons:
+- Product generation - number
+- Device ID - devices mac address - hex representation of bytes - base64 encoded
+- Devices public key - hex representation of bytes - base64 encoded
+
+## Settings - NVM
+### Authorization settings
+Namespace: _cert_  
+Keys:
+- pc_sign - Product certificate sign _[bytes]_
+- manu_pub - Manufacture public key _[bytes]_
+- dev_pub - devices public key _[bytes]_
+- dev_priv - devices private key _[bytes]_
+
+### Other settings
+Namespace: _mgld_  
+Keys:
+- psk - WiFi password _[string]_
+- ssid - WiFi SSID _[string]_
+- picklock - devices password for API login _[string]_
+- uid - user ID _[number as string]_
+- tz - timezone from tz database _[string]_
+- role - Settings value to determine if device should act as _server_, _client_ or should 
+  become server when no client in sight (auto) _[one digit number]_
+    - 0 - Auto
+    - 1 - Server
+    - 2 - Client
+- dli - Maximum daylight Intensity (percent)
+- ds - Day start time in minutes since 00:00
+- de - Day end time in minutes since 00:00
+- ssd - sunset duration in minutes since 00:00
+- srd - sunrise duration in minutes since 00:00

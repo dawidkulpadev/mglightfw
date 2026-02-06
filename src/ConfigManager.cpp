@@ -21,19 +21,12 @@
 #include "ConfigManager.h"
 
 bool ConfigManager::readDeviceConfig(Preferences *prefs, DeviceConfig *config) {
-    config->setSsid("dlink3");
-    config->setPsk("sikakama2");
-    config->setUid("2");
-    config->setPicklock("test");
-    config->setTimezone("Europe/Warsaw");
-    config->setRole(DEVICE_CONFIG_ROLE_SERVER);
-    return true;
-
     if( !prefs->isKey(CONFIGMANAGER_KEY_SSID) or
         !prefs->isKey(CONFIGMANAGER_KEY_PSK) or
         !prefs->isKey(CONFIGMANAGER_KEY_PICKLOCK) or
         !prefs->isKey(CONFIGMANAGER_KEY_UID) or
-        !prefs->isKey(CONFIGMANAGER_KEY_TIMEZONE)){
+        !prefs->isKey(CONFIGMANAGER_KEY_TIMEZONE) or
+        !prefs->isKey(CONFIGMANAGER_KEY_ROLE)){
         return false;
     }
 

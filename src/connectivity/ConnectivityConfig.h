@@ -35,6 +35,8 @@ public:
     explicit ConnectivityConfig(BLELNServer* blelnServer, Preferences *preferences, DeviceConfig* deviceConfig);
     void loop();
     uint8_t* getMAC();
+
+    void onMessageReceived(uint16_t cliH, const std::string &msg);
 private:
     BLELNServer *blelnServer;
     Preferences *prefs;

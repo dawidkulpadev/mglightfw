@@ -50,10 +50,11 @@ void ConnectivityServer::loop() {
                 },
                 "ATWrkr", 4096, this, 5, nullptr, 1);
 
-        blelnServer->start(prefs, BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
         blelnServer->setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
             this->onMessageReceived(cliH, msg);
         });
+        blelnServer->start(prefs, BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
+
         state= ServerModeState::Idle;
 
 

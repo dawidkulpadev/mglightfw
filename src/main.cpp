@@ -105,7 +105,7 @@ void printHello(){
 
 void factoryReset(){
     // Signal with led fast blinks
-    /*for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
+    for(int i=0; i<FACTORY_RESET_BLINKS_CNT; i++){
         digitalWrite(pinout_sys_led, LOW);
         delay(FACTORY_RESET_BLINKS_INTERVAL);
         digitalWrite(pinout_sys_led, HIGH);
@@ -114,7 +114,7 @@ void factoryReset(){
 
     // Remove WiFi config file
     ConfigManager::clearWifiConfig(&prefs);
-    esp_restart();*/
+    esp_restart();
 }
 
 int btnPressCnt=0;

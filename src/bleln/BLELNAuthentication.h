@@ -32,7 +32,6 @@ public:
     std::string getSignedCert();
     bool verifyCert(const std::string &cert, const std::string &sign, uint8_t *genOut, uint8_t *macOut,
                     int macOutLen, uint8_t *pubKeyOut, int pubKeyOutLen);
-    void signData(std::string &d, uint8_t *out);
     void signData(const uint8_t *d, size_t dlen, uint8_t *out);
 
 private:
