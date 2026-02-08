@@ -26,7 +26,7 @@
 
 #define PICKLOCK_LENGTH     12
 
-const std::string api_url="https://dawidkulpa.pl/apis/miogiapicco/";
+const std::string api_url="https://dawidkulpa.pl/miogiapicco/api/";
 
 
 /**

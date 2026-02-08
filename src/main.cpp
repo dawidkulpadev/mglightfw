@@ -112,7 +112,7 @@ void factoryReset(){
 
     // Remove WiFi config file
     ConfigManager::clearWifiConfig(&prefs);
-    esp_restart();
+    //esp_restart();
 }
 
 int btnPressCnt=0;
@@ -180,6 +180,7 @@ void setup() {
 
     prefs.begin("mgld", false);
 
+
     bool buttonPressed= false;
 
     if(digitalRead(pinout_switch)==LOW){
@@ -231,6 +232,7 @@ void setup() {
             ConfigManager::writeDay(&prefs, &day);
         } else {
             Serial.println("main - API Talk failed");
+            Serial.printf("RESPONSE (%d): %s", httpCode, msg.c_str());
         }
     });
 
@@ -291,8 +293,8 @@ void loop() {
             uint8_t mac[6];
             WiFi.macAddress(mac);
             char buf[100];
-            sprintf(buf, "fv=%d&t=%d", fw_version, (int)t);
-            connectivity.startAPITalk("light/get.php", 'P', mac, config.getPicklock(), buf);
+            sprintf(buf, R"({"fv": %d,"t":%d})", fw_version, (int)t);
+            connectivity.startAPITalk("device/light/request-config", 'P', mac, config.getPicklock(), buf);
             lastServerTalk= nowsse;
         }
     }

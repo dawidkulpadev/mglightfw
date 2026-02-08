@@ -161,7 +161,7 @@ void ConnectivityServer::appendToAPITalksResponseQueue(uint16_t h, uint16_t id, 
         strcpy(dataHeapBuf, data.c_str());
 
         APITalkResponse pkt{h, id, errc, respCode, dataHeapBuf};
-        if (xQueueSend(apiTalksResponseQueue, &pkt, 0) != pdPASS) {
+        if (xQueueSend(apiTalksResponseQueue, &pkt, 1000) != pdPASS) {
             free(dataHeapBuf);
         } else {
             Serial.println("Pushed response");
@@ -220,13 +220,14 @@ void ConnectivityServer::apiTalksWorker() {
             Serial.println(httpReq.c_str());
             Serial.println(pkt.data);
 
+            https.addHeader("x-device-id", pkt.mac);
+            https.addHeader("x-device-picklock", pkt.picklock);
+            https.addHeader("Content-Type", "application/json");
+
             if (https.begin(*client, httpReq.c_str())) {  // HTTPS
                 int httpCode = 0;
-                if (pkt.method == 'P') {
-                    https.addHeader("x-device-id", pkt.mac);
-                    https.addHeader("x-device-picklock", pkt.picklock);
-                    https.addHeader("Content-Type", "application/json");
 
+                if (pkt.method == 'P') {
                     httpCode = https.POST(pkt.data);
                 } else if (pkt.method == 'G') {
                     httpCode = https.GET();
@@ -237,7 +238,7 @@ void ConnectivityServer::apiTalksWorker() {
                     // HTTP header has been send and Server response header has been handled
                     appendToAPITalksResponseQueue(pkt.h, pkt.id, 0, httpCode, https.getString());
                 } else {
-                    appendToAPITalksResponseQueue(pkt.h, pkt.id, 3, 0, "");
+                    appendToAPITalksResponseQueue(pkt.h, pkt.id, 3, httpCode, https.getString());
                     Serial.printf("[HTTPS] POST... failed, error: %s\n", HTTPClient::errorToString(httpCode).c_str());
                 }
 

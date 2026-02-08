@@ -33,7 +33,6 @@ bool BLELNAuthentication::loadCert() {
         prefs.getBytes("dev_pub", myPublicKey, BLELN_DEV_PUB_KEY_LEN);
         prefs.end();
     } else {
-        Serial.println("BLELNAuthentication - loadCert() - failed");
         return false;
     }
 
