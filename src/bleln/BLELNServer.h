@@ -42,8 +42,9 @@
 
 class BLELNServer : public NimBLEScanCallbacks, public NimBLEServerCallbacks{
 public:
+    BLELNServer(const uint8_t* certSign, const uint8_t* manuPubKey, const uint8_t* myPrivateKey, const uint8_t* myPublicKey, const std::string &userId);
     // User methods
-    void start(Preferences *prefs, const std::string &name, const std::string &uuid);
+    void start(const std::string &name, const std::string &uuid);
     void stop();
     void startOtherServerSearch(uint32_t durationMs, const std::string &therUUID, const std::function<void(bool)>& onResult);
     bool getConnContext(uint16_t h, BLELNConnCtx** c);
@@ -73,6 +74,8 @@ private:
     SemaphoreHandle_t clisMtx = nullptr;
     QueueHandle_t workerActionQueue;
     bool runWorker;
+
+    int myUserId;
 
     // Encryption
     uint8_t g_psk_salt[32];

@@ -26,20 +26,18 @@
 #include "DeviceConfig.h"
 #include "SuperString.h"
 #include "WiFiManager.h"
-#include "ConfigManager.h"
 
 class ConnectivityConfig {
 public:
     enum class ConfigModeState {Start, ServerTasking};
 
-    explicit ConnectivityConfig(BLELNServer* blelnServer, Preferences *preferences, DeviceConfig* deviceConfig);
+    explicit ConnectivityConfig(BLELNServer* blelnServer, DeviceConfig* deviceConfig);
     void loop();
     uint8_t* getMAC();
 
     void onMessageReceived(uint16_t cliH, const std::string &msg);
 private:
     BLELNServer *blelnServer;
-    Preferences *prefs;
     DeviceConfig *config;
 
     ConfigModeState state;                           // State in config mode

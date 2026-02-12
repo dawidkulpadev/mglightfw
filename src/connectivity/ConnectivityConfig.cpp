@@ -4,9 +4,8 @@
 
 #include "ConnectivityConfig.h"
 
-ConnectivityConfig::ConnectivityConfig(BLELNServer *blelnServer, Preferences *preferences, DeviceConfig* deviceConfig) {
+ConnectivityConfig::ConnectivityConfig(BLELNServer *blelnServer, DeviceConfig* deviceConfig) {
     this->blelnServer= blelnServer;
-    prefs= preferences;
     config= deviceConfig;
     state= ConfigModeState::Start;
     uint64_t fmac= ESP.getEfuseMac();
@@ -20,7 +19,7 @@ void ConnectivityConfig::loop() {
         blelnServer->setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
             this->onMessageReceived(cliH, msg);
         });
-        blelnServer->start(prefs, BLE_NAME, BLELN_CONFIG_UUID);
+        blelnServer->start( BLE_NAME, BLELN_CONFIG_UUID);
 
 
         WiFiClass::mode(WIFI_STA);
@@ -49,7 +48,8 @@ void ConnectivityConfig::loop() {
 
         if(rebootCalled){
             if(rebootCalledAt + 2000 < millis()){
-                ConfigManager::writeDeviceConfig(prefs, this->config);
+                this->config->writeBaseConfig();
+                this->config->writeIdConfig();
                 esp_restart();
             }
         }
@@ -67,20 +67,11 @@ void ConnectivityConfig::onMessageReceived(uint16_t cliH, const std::string &msg
 
         if(parts[1]=="GET"){
             if(parts[2]=="wssid"){
-                if(config->getSsid()!= nullptr)
-                    sprintf(resp, "$CONFIG,VAL,wssid,%s", config->getSsid());
-                else
-                    sprintf(resp, "$CONFIG,VAL,wssid,");
+                sprintf(resp, "$CONFIG,VAL,wssid,%s", config->getSsid().c_str());
             } else if(parts[2]=="pcklk"){
-                if(config->getPicklock()!= nullptr)
-                    sprintf(resp, "$CONFIG,VAL,pcklk,%s", config->getPicklock());
-                else
-                    sprintf(resp, "$CONFIG,VAL,pcklk,");
+                sprintf(resp, "$CONFIG,VAL,pcklk,%s", config->getPicklock().c_str());
             } else if(parts[2]=="tzone"){
-                if(config->getTimezone()!= nullptr)
-                    sprintf(resp, "$CONFIG,VAL,tzone,%s", config->getTimezone());
-                else
-                    sprintf(resp, "$CONFIG,VAL,tzone,");
+                sprintf(resp, "$CONFIG,VAL,tzone,%s", config->getTimezone().c_str());
             } else if(parts[2]=="mac"){
                 char str_mac[14];
                 uint8_t *macc= getMAC();
@@ -92,22 +83,25 @@ void ConnectivityConfig::onMessageReceived(uint16_t cliH, const std::string &msg
         } else if(parts[1]=="SET"){
             if(parts[2]=="wssid"){
                 sprintf(resp,"$CONFIG,SETOK,wssid");
-                config->setSsid(parts[3].c_str());
+                config->setSsid(parts[3]);
             } else if(parts[2]=="wpsk"){
                 sprintf(resp,"$CONFIG,SETOK,wpsk");
-                config->setPsk(parts[3].c_str());
+                config->setPsk(parts[3]);
             } else if(parts[2]=="pcklk"){
                 sprintf(resp,"$CONFIG,SETOK,pcklk");
-                config->setPicklock(parts[3].c_str());
+                config->setPicklock(parts[3]);
             } else if(parts[2]=="tzone"){
                 sprintf(resp,"$CONFIG,SETOK,tzone");
-                config->setTimezone(parts[3].c_str());
+                config->setTimezone(parts[3]);
             } else if(parts[2]=="uid"){
                 sprintf(resp,"$CONFIG,SETOK,uid");
-                config->setUid(parts[3].c_str());
+                config->setUid(parts[3]);
             } else if(parts[2]=="role"){
                 sprintf(resp,"$CONFIG,SETOK,role");
                 config->setRole(parts[3][0]);
+            } else if(parts[2]=="certsign"){
+                sprintf(resp,"$CONFIG,SETOK,certsign");
+                config->setCertSignFromBase64(parts[3]);
             }
         }
 

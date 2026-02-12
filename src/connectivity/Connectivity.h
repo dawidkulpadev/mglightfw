@@ -42,15 +42,12 @@ public:
     typedef std::function<void(int, int, int, const std::string &)> OnApiResponseCb;
     typedef std::function<void(ConnectivityMode)> RequestModeChangeCb;
 
-    void start(uint8_t devMode, DeviceConfig *devConfig, Preferences *preferences,
-               const OnApiResponseCb &onApiResponse);
+    void start(uint8_t devMode, DeviceConfig *devConfig, const OnApiResponseCb &onApiResponse);
     void loop();
-    void startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, char* picklock, const std::string& data); // Talk with API about me
+    void startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, const std::string &picklock, const std::string& data); // Talk with API about me
 
 private:
-    Preferences *prefs;
-
-    BLELNServer blelnServer;
+    BLELNServer *blelnServer{};
     ConnectivityServer *conServer= nullptr;
     ConnectivityClient *conClient= nullptr;
     ConnectivityConfig *conConfig= nullptr;

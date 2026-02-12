@@ -45,9 +45,7 @@
 #include <Ticker.h>
 
 #include "PWMLed.h"
-#include "Day.h"
 #include "DeviceConfig.h"
-#include "ConfigManager.h"
 #include "InternalTempSensor.h"
 
 #include "config.h"
@@ -57,15 +55,12 @@
 #define API_TALK_INTERVAL       60
 
 int deviceMode;
-Preferences prefs;
 Connectivity connectivity;
 
 PWMLed light(0, pinout_intensity, 200);
-Day day;
-std::string timezone;
 
 //Read wifi configuration
-DeviceConfig config;
+DeviceConfig configs;
 
 Ticker configButtonTicker;
 Ticker sunUpdateTicker;
@@ -111,8 +106,8 @@ void factoryReset(){
     }
 
     // Remove WiFi config file
-    ConfigManager::clearWifiConfig(&prefs);
-    //esp_restart();
+    configs.factoryReset();
+    esp_restart();
 }
 
 int btnPressCnt=0;
@@ -125,7 +120,7 @@ void countButtonPressPeriod(){
     }
 
     // Factory Reset if button pressed for over 15s (15 passes for 1000ms loop delay)
-    if(btnPressCnt>15){
+    if(btnPressCnt>5){
         factoryReset();
     }
 }
@@ -178,8 +173,6 @@ void setup() {
     printHello();
     delay(5000);
 
-    prefs.begin("mgld", false);
-
 
     bool buttonPressed= false;
 
@@ -189,7 +182,8 @@ void setup() {
             buttonPressed= true;
     }
 
-    if(buttonPressed or !ConfigManager::readDeviceConfig(&prefs, &config)){
+    configs.loadConfig();
+    if(buttonPressed or configs.getUid()=="-1"){
         Serial.println("Device: Config mode");
         deviceMode= DEVICE_MODE_CONFIG;
     } else {
@@ -197,39 +191,40 @@ void setup() {
     }
 
     //Setup WiFi
-    connectivity.start(deviceMode, &config, &prefs, [](int id, int errc, int httpCode, const std::string &msg){
+    connectivity.start(deviceMode, &configs, [](int id, int errc, int httpCode, const std::string &msg){
         if(errc==0 and httpCode==200) {
             int val;
 
             //Read DLI value
             val = getUIntValue(msg, "\"DLI\":");
             if (val >= 0)
-                day.setDli(val);
+                configs.setDli(val);
 
             //Read DS value
             val = getUIntValue(msg, "\"DS\":");
             if (val >= 0)
-                day.setDs(val);
+                configs.setDs(val);
 
             //Read DE value
             val = getUIntValue(msg, "\"DE\":");
             if (val >= 0)
-                day.setDe(val);
+                configs.setDe(val);
 
             //Read SSD value
             val = getUIntValue(msg, "\"SSD\":");
             if (val >= 0)
-                day.setSsd(val);
+                configs.setSsd(val);
 
             //Read SRD value
             val = getUIntValue(msg, "\"SRD\":");
             if (val >= 0)
-                day.setSrd(val);
+                configs.setSrd(val);
 
             Serial.println("main - Day configuration received");
-            Serial.printf("main - DS: %d, DE: %d, SSD: %d, SRD: %d, DLI: %d\r\n", day.getDs(), day.getDe(),
-                          day.getSsd(), day.getSrd(), day.getDli());
-            ConfigManager::writeDay(&prefs, &day);
+            Serial.printf("main - DS: %d, DE: %d, SSD: %d, SRD: %d, DLI: %d\r\n", configs.getDs(), configs.getDe(),
+                          configs.getSsd(), configs.getSrd(), configs.getDli());
+            // TODO: Check if configs changed
+            configs.writeDayConfig();
         } else {
             Serial.println("main - API Talk failed");
             Serial.printf("RESPONSE (%d): %s", httpCode, msg.c_str());
@@ -238,15 +233,15 @@ void setup() {
 
     light.start();
     if(deviceMode==DEVICE_MODE_NORMAL) {
-        Serial.println("Reading Day config file...");
-        if(!ConfigManager::readDay(&prefs, &day))
-            Serial.println("Day config file not found :(");
+        Serial.println("Reading Day config file...");;
         Serial.printf("Day config:\r\n\tDLI: %d\r\n\tDS: %d\r\n\tDE: %d\r\n\tSSD: %d\r\n\tSRD: %d\r\n",
-                      day.getDli(), day.getDs(), day.getDe(), day.getSsd(), day.getSrd());
-        configButtonTicker.attach(1, countButtonPressPeriod);
+                      configs.getDli(), configs.getDs(), configs.getDe(), configs.getSsd(), configs.getSrd());
+
     } else {
         light.setIntensity(0);
     }
+
+    configButtonTicker.attach(1, countButtonPressPeriod);
 
     digitalWrite(pinout_sys_led, HIGH);
 
@@ -279,7 +274,7 @@ void loop() {
     } else {
         // Set pwm infill
         auto nowsse= static_cast<uint32_t>(time(nullptr));    // [seconds] since epoch
-        float intensity= day.getSunIntensity(nowDayTime(), light.getIntensity());
+        float intensity= configs.getSunIntensity(nowDayTime(), light.getIntensity());
         light.setIntensity(intensity);
         if(intensity>30.0) {
             digitalWrite(pinout_fan, HIGH);
@@ -294,7 +289,7 @@ void loop() {
             WiFi.macAddress(mac);
             char buf[100];
             sprintf(buf, R"({"fv": %d,"t":%d})", fw_version, (int)t);
-            connectivity.startAPITalk("device/light/request-config", 'P', mac, config.getPicklock(), buf);
+            connectivity.startAPITalk("device/light/request-config", 'P', mac, configs.getPicklock(), buf);
             lastServerTalk= nowsse;
         }
     }

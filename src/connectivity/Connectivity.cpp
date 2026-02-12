@@ -25,19 +25,19 @@
 #include "ConnectivityClient.h"
 #include "ConnectivityConfig.h"
 
-void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, Preferences *preferences,
-                         const OnApiResponseCb &onApiResponse) {
-    prefs= preferences;
+void Connectivity::start(uint8_t devMode, DeviceConfig *devConfig, const OnApiResponseCb &onApiResponse) {
+    blelnServer= new BLELNServer(devConfig->getCertSign(), devConfig->getManuPubKey(),
+                                 devConfig->getMyPrivateKey(), devConfig->getMyPublicKey(), devConfig->getUid());
 
     if(devMode==DEVICE_MODE_CONFIG) {
-        conConfig= new ConnectivityConfig(&blelnServer, preferences, devConfig);
+        conConfig= new ConnectivityConfig(blelnServer, devConfig);
         conMode = ConnectivityMode::ConfigMode;
     } else {
         conClient= new ConnectivityClient(devConfig, &wiFiManager, onApiResponse,
                                           [this](ConnectivityMode m){
             this->conMode= m;
         });
-        conServer= new ConnectivityServer(&blelnServer, devConfig, preferences, &wiFiManager, onApiResponse,
+        conServer= new ConnectivityServer(blelnServer, devConfig, &wiFiManager, onApiResponse,
                                           [this](ConnectivityMode m){
             this->conMode= m;
         });
@@ -73,15 +73,13 @@ void Connectivity::loop() {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-void Connectivity::startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, char* picklock, const std::string& data) {
+void Connectivity::startAPITalk(const std::string& apiPoint, char method, uint8_t *mac, const std::string &picklock, const std::string& data) {
     if(conMode==ConnectivityMode::ClientMode) {
-        prefs->putBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, false);
         //conClient->startAPITalk(apiPoint, method, data);
     } else if(conMode==ConnectivityMode::ServerMode) {
-        prefs->putBool(RECENTLY_HAS_BEEN_SERVER_PREFS_TAG, true);
         char macBuf[13];
         sprintf(macBuf, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        conServer->requestApiTalk(method, macBuf, picklock, apiPoint, data);
+        conServer->requestApiTalk(method, macBuf, picklock.c_str(), apiPoint, data);
     }
 }
 

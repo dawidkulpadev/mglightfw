@@ -25,7 +25,19 @@
 
 /// *************** PUBLIC ***************
 
-void BLELNServer::start(Preferences *prefs, const std::string &name, const std::string &uuid) {
+BLELNServer::BLELNServer(const uint8_t *certSign, const uint8_t *manuPubKey, const uint8_t *myPrivateKey, const uint8_t *myPublicKey, const std::string &userId) :
+        authStore(certSign, manuPubKey, myPrivateKey, myPublicKey, userId){
+    try {
+        myUserId= std::stoi(userId, nullptr, 10);
+    } catch (std::invalid_argument &e){
+        myUserId= -1;
+    } catch (std::out_of_range &e) {
+        myUserId= -1;
+    }
+}
+
+
+void BLELNServer::start(const std::string &name, const std::string &uuid) {
     serviceUUID= uuid;
 
     // Initialize mutexes
@@ -44,19 +56,9 @@ void BLELNServer::start(Preferences *prefs, const std::string &name, const std::
             }, "BLELNWorker", 4096, this, 5, &workerTaskHandle, 1);
 
     // Initialize encryption salt (or find in memory)
-    size_t have = prefs->getBytesLength("salt");
-    if (have != 32) {
-        Encryption::random_bytes(g_psk_salt, 32);
-        g_epoch = 1;
-        prefs->putBytes("salt", g_psk_salt, 32);
-        prefs->putULong("epoch", g_epoch);
-    } else {
-        prefs->getBytes("salt", g_psk_salt, 32);
-        g_epoch = prefs->getULong("epoch", 1);
-        if (g_epoch == 0) g_epoch = 1;
-    }
+    Encryption::random_bytes(g_psk_salt, 32);
+    g_epoch = 1;
     Encryption::randomizer_init();
-    authStore.loadCert();
 
     // Init NimBLE
     NimBLEDevice::init(name);
@@ -274,6 +276,8 @@ void BLELNServer::worker() {
                 } else if(action.type==BLELN_WORKER_ACTION_PROCESS_DATA_RX){
                     xSemaphoreGive(clisMtx);
                     worker_processDataRx(action.connH, action.d, action.dlen);
+                } else {
+                    xSemaphoreGive(clisMtx);
                 }
 
                 free(action.d);
@@ -374,11 +378,18 @@ void BLELNServer::worker_processKeyRx(uint16_t h, uint8_t *data, size_t dataLen)
                     uint8_t gen;
                     uint8_t fMac[6];
                     uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
+                    int userId;
 
-                    if (authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64)) {
-                        cx->setCertData(fMac, fPubKey);
-                        sendChallengeNonce(cx);
-                        cx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+                    if (authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64, &userId)) {
+                        if(userId==myUserId or myUserId==-1) {
+                            cx->setCertData(fMac, fPubKey);
+                            sendChallengeNonce(cx);
+                            cx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+                        } else {
+                            disconnectClient(cx, BLE_ERR_CONN_REJ_SECURITY);
+                            cx->setState(BLELNConnCtx::State::AuthFailed);
+                            Serial.println("[W] BLELNServer - not my users client");
+                        }
                     } else {
                         disconnectClient(cx, BLE_ERR_AUTH_FAIL);
                         cx->setState(BLELNConnCtx::State::AuthFailed);
@@ -623,6 +634,7 @@ void BLELNServer::onKeyToCliSubscribe(__attribute__((unused)) NimBLECharacterist
 void BLELNServer::setOnMessageReceivedCallback(std::function<void(uint16_t cliH, const std::string& msg)> cb) {
     onMsgReceived= std::move(cb);
 }
+
 
 
 

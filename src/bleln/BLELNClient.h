@@ -30,6 +30,7 @@
 
 class BLELNClient : public NimBLEScanCallbacks, public NimBLEClientCallbacks{
 public:
+    BLELNClient(const uint8_t* certSign, const uint8_t* manuPubKey, const uint8_t* myPrivKey, const uint8_t* myPubKey, const std::string &userId);
     void start(const std::string &name, std::function<void(const std::string&)> onServerResponse);
     void stop();
     void startServerSearch(uint32_t durationMs, const std::string &serverUUID, const std::function<void(const NimBLEAdvertisedDevice *advertisedDevice)>& onResult);

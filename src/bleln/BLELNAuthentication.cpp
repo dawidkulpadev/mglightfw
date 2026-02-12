@@ -23,25 +23,21 @@
 #include "Encryption.h"
 #include "SuperString.h"
 
-bool BLELNAuthentication::loadCert() {
-    Preferences prefs;
 
-    if(prefs.begin("cert", true)) {
-        size_t r= prefs.getBytes("pc_sign", certSign, BLELN_MANU_SIGN_LEN);
-        prefs.getBytes("manu_pub", manuPubKey, BLELN_MANU_PUB_KEY_LEN);
-        prefs.getBytes("dev_priv", myPrivateKey, BLELN_DEV_PRIV_KEY_LEN);
-        prefs.getBytes("dev_pub", myPublicKey, BLELN_DEV_PUB_KEY_LEN);
-        prefs.end();
-    } else {
-        return false;
-    }
-
-    return true;
+BLELNAuthentication::BLELNAuthentication(const uint8_t *cs, const uint8_t *mpk, const uint8_t *dPrivK,
+                                         const uint8_t *dPublK, const std::string &userId) {
+    memcpy(certSign, cs, BLELN_MANU_SIGN_LEN);
+    memcpy(manuPubKey, mpk, BLELN_MANU_PUB_KEY_LEN);
+    memcpy(myPrivateKey, dPrivK, BLELN_DEV_PRIV_KEY_LEN);
+    memcpy(myPublicKey, dPublK, BLELN_DEV_PUB_KEY_LEN);
+    uid= userId;
 }
 
 std::string BLELNAuthentication::getSignedCert() {
     // # Cert:
     // product generation - as text
+    // ;
+    // registered user id - number as text (-1 if no user)
     // ;
     // devices mac 6 bytes  - base64
     // ;
@@ -54,6 +50,8 @@ std::string BLELNAuthentication::getSignedCert() {
     uint64_t mac= ESP.getEfuseMac();
 
     out.append("2;");
+    out.append(uid);
+    out.append(";");
     out.append(Encryption::base64Encode((uint8_t*)&mac, 6));
     out.append(";");
     out.append(Encryption::base64Encode(myPublicKey, BLELN_DEV_PUB_KEY_LEN));
@@ -65,7 +63,7 @@ std::string BLELNAuthentication::getSignedCert() {
 
 
 bool BLELNAuthentication::verifyCert(const std::string &cert, const std::string &sign, uint8_t *genOut, uint8_t *macOut,
-                                     int macOutLen, uint8_t *pubKeyOut, int pubKeyOutLen) {
+                                     int macOutLen, uint8_t *pubKeyOut, int pubKeyOutLen, int* userIdOut) {
     uint8_t signRaw[BLELN_MANU_SIGN_LEN];
     Encryption::base64Decode(sign, signRaw, BLELN_MANU_SIGN_LEN);
 
@@ -80,14 +78,15 @@ bool BLELNAuthentication::verifyCert(const std::string &cert, const std::string 
         StringList certSplit= splitCsvRespectingQuotes(cert, ';');
         try {
             *genOut = std::stoi(certSplit[0], nullptr, 10);
+            *userIdOut= std::stoi(certSplit[1], nullptr, 10);
         } catch (std::invalid_argument &e){
             return false;
         } catch (std::out_of_range &e) {
             return false;
         }
 
-        if(Encryption::base64Decode(certSplit[1], macOut, macOutLen)==6){
-            if(Encryption::base64Decode(certSplit[2], pubKeyOut, pubKeyOutLen)!=BLELN_DEV_PUB_KEY_LEN){
+        if(Encryption::base64Decode(certSplit[2], macOut, macOutLen)==6){
+            if(Encryption::base64Decode(certSplit[3], pubKeyOut, pubKeyOutLen)!=BLELN_DEV_PUB_KEY_LEN){
                 return false;
             }
         } else {
@@ -102,3 +101,14 @@ void BLELNAuthentication::signData(const uint8_t *d, size_t dlen, uint8_t *out) 
     Encryption::signData_ECDSA_P256(d, dlen,
                                     myPrivateKey, BLELN_DEV_PRIV_KEY_LEN, out, BLELN_DEV_SIGN_LEN);
 }
+
+int BLELNAuthentication::getMyUserId() {
+    try {
+        return std::stoi(uid, nullptr, 10);
+    } catch (std::invalid_argument &e){
+        return -1;
+    } catch (std::out_of_range &e) {
+        return -1;
+    }
+}
+

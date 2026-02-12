@@ -24,6 +24,13 @@
 #include "BLELNBase.h"
 #include "SuperString.h"
 
+
+BLELNClient::BLELNClient(const uint8_t *certSign, const uint8_t *manuPubKey, const uint8_t *myPrivKey,
+                         const uint8_t *myPubKey, const std::string &userId) : authStore(certSign, manuPubKey, myPrivKey, myPubKey, userId) {
+
+}
+
+
 void BLELNClient::start(const std::string &name, std::function<void(const std::string&)> onServerResponse) {
     if (workerTaskHandle != nullptr) {
         stop();
@@ -35,7 +42,6 @@ void BLELNClient::start(const std::string &name, std::function<void(const std::s
     NimBLEDevice::setMTU(247);
 
     Encryption::randomizer_init();
-    authStore.loadCert();
 
     delete connCtx;
     connCtx= nullptr;
@@ -349,11 +355,20 @@ void BLELNClient::worker_processKeyRx(uint8_t *data, size_t dataLen) {
                     uint8_t gen;
                     uint8_t fMac[6];
                     uint8_t fPubKey[BLELN_DEV_PUB_KEY_LEN];
+                    int friendsUserId;
 
-                    if(authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64)){
-                        connCtx->setCertData(fMac, fPubKey);
-                        sendCertToServer(connCtx);
-                        connCtx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+
+                    if(authStore.verifyCert(parts[1], parts[2], &gen, fMac, 6, fPubKey, 64, &friendsUserId)){
+                        int myUserId= authStore.getMyUserId();
+                        if(friendsUserId==myUserId or myUserId ==-1) {
+                            connCtx->setCertData(fMac, fPubKey);
+                            sendCertToServer(connCtx);
+                            connCtx->setState(BLELNConnCtx::State::ChallengeResponseCli);
+                        } else {
+                            disconnect(BLE_ERR_CONN_REJ_SECURITY);
+                            connCtx->setState(BLELNConnCtx::State::AuthFailed);
+                            Serial.println("[W] BLELNServer - not my users client");
+                        }
                     } else {
                         disconnect(BLE_ERR_AUTH_FAIL);
                         connCtx->setState(BLELNConnCtx::State::AuthFailed);

@@ -22,37 +22,101 @@
 #define UNTITLED_DEVICECONFIG_H
 
 #include <WString.h>
+#include "bleln/BLELNBase.h"
 
 #define DEVICE_CONFIG_ROLE_AUTO     '0'
 #define DEVICE_CONFIG_ROLE_SERVER   '1'
 #define DEVICE_CONFIG_ROLE_CLIENT   '2'
+
+#define CONFIGMANAGER_KEY_PSK       "psk"
+#define CONFIGMANAGER_KEY_SSID      "ssid"
+#define CONFIGMANAGER_KEY_PICKLOCK  "picklock"
+#define CONFIGMANAGER_KEY_UID       "uid"
+#define CONFIGMANAGER_KEY_TIMEZONE  "tz"
+#define CONFIGMANAGER_KEY_ROLE      "role"
+#define CONFIGMANAGER_KEY_CERTSIGN  "certsign"
+
+#define CONFIGMANAGER_KEY_DLI       "dli"
+#define CONFIGMANAGER_KEY_DS        "ds"
+#define CONFIGMANAGER_KEY_DE        "de"
+#define CONFIGMANAGER_KEY_SSD       "ssd"
+#define CONFIGMANAGER_KEY_SRD       "srd"
 
 
 class DeviceConfig {
 public:
     DeviceConfig();
 
-    char *getSsid() const;
-    char *getPsk() const;
-    char *getUid() const;
-    char *getPicklock() const;
-    char *getTimezone() const;
+    // Base
+    std::string getSsid() const;
+    std::string getPsk() const;
+    std::string getTimezone() const;
     char getRole() const;
 
-    void setSsid(const char *ssid);
-    void setPsk(const char *psk);
-    void setUid(const char *uid);
-    void setPicklock(const char *picklock);
-    void setTimezone(const char *timezone);
+    void setSsid(std::string v);
+    void setPsk(std::string v);
+    void setTimezone(std::string v);
     void setRole(char role);
 
+    // id
+    std::string getUid() const;
+    std::string getPicklock();
+    const uint8_t* getCertSign() const;
+
+    void setUid(std::string v);
+    void setPicklock(std::string v);
+    void setCertSignFromBase64(const std::string& b64);
+
+    // cert
+    const uint8_t* getManuPubKey() const;
+    const uint8_t* getMyPrivateKey() const;
+    const uint8_t* getMyPublicKey() const;
+
+    // day
+    void setDli(int v);
+    void setDs(int v);
+    void setDe(int v);
+    void setSsd(int v);
+    void setSrd(int v);
+
+    int getDli() const;
+    int getDs() const;
+    int getDe() const;
+    int getSsd() const;
+    int getSrd() const;
+
+    float getSunIntensity(uint32_t dayTime, float lastIntensity) const;
+
+    bool loadConfig();
+    void writeBaseConfig();
+    void writeIdConfig();
+    void writeDayConfig() const;
+
+    void factoryReset();
+
 private:
-    char *ssid;
-    char *psk;
-    char *uid;
-    char *picklock;
-    char *tz;
-    char r;
+    // base
+    std::string ssid;
+    std::string psk;
+    std::string tz;
+    char role{};
+
+    // id
+    std::string uid;
+    std::string picklock;
+    uint8_t certSign[BLELN_MANU_SIGN_LEN]{};
+
+    // cert
+    uint8_t manuPubKey[BLELN_MANU_PUB_KEY_LEN]{};
+    uint8_t myPrivateKey[BLELN_DEV_PRIV_KEY_LEN]{};
+    uint8_t myPublicKey[BLELN_DEV_PUB_KEY_LEN]{};
+
+    // day
+    int dli=1000; //Daylight intensity (in min since 00:00)
+    int ds{};   //Day start (in min since 00:00)
+    int de{};   //Day end (in min since 00:00)
+    int ssd{};  //Sunset duration (in min since 00:00)
+    int srd{};  //Sunrise duration (in min since 00:00)
 };
 
 

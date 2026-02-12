@@ -334,7 +334,7 @@ size_t Encryption::base64Decode(const std::string &in, uint8_t *out, size_t outL
     size_t rlen;
     if(mbedtls_base64_decode(out, outLen, &rlen,
                           reinterpret_cast<const unsigned char *>(in.c_str()), in.size())){
-        Serial.println("Encryption - base64Decode - failed decoding!");
+        Serial.println(("Encryption - base64Decode - failed decoding! "+in).c_str());
     }
 
     return rlen;

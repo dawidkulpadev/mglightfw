@@ -24,7 +24,12 @@
 
 ConnectivityClient::ConnectivityClient(DeviceConfig *deviceConfig, WiFiManager *wifiManager,
                                        Connectivity::OnApiResponseCb onApiResponse,
-                                       Connectivity::RequestModeChangeCb requestModeChange) {
+                                       Connectivity::RequestModeChangeCb requestModeChange) :
+        blelnClient(deviceConfig->getCertSign(),
+                    deviceConfig->getManuPubKey(),
+                    deviceConfig->getMyPrivateKey(),
+                    deviceConfig->getMyPublicKey(),
+                    deviceConfig->getUid()){
     config= deviceConfig;
     oar= std::move(onApiResponse);
     rmc= std::move(requestModeChange);
@@ -147,7 +152,7 @@ void ConnectivityClient::onServerResponse(const std::string &msg) {
         }
     } else if(parts[0]=="$NTP" and parts.size()==2){
         long nows= strtol(parts[1].c_str(), nullptr, 10);
-        setenv("TZ", config->getTimezone(), 1);
+        setenv("TZ", config->getTimezone().c_str(), 1);
         tzset();
 
         struct timeval tv{};

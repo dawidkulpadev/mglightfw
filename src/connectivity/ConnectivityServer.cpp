@@ -22,14 +22,13 @@
 #include <utility>
 #include "ConnectivityServer.h"
 
-ConnectivityServer::ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig, Preferences *preferences,
+ConnectivityServer::ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig,
                                        WiFiManager *wifiManager, Connectivity::OnApiResponseCb onApiResponse,
                                        Connectivity::RequestModeChangeCb requestModeChange) {
     this->blelnServer= blelnServer;
     oar= std::move(onApiResponse);
     rmc= std::move(requestModeChange);
     config= deviceConfig;
-    prefs= preferences;
     state= ServerModeState::Init;
     runAPITalksWorker= false;
     apiTalksRequestQueue= nullptr;
@@ -53,7 +52,7 @@ void ConnectivityServer::loop() {
         blelnServer->setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
             this->onMessageReceived(cliH, msg);
         });
-        blelnServer->start(prefs, BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
+        blelnServer->start( BLE_NAME, BLELN_HTTP_REQUESTER_UUID);
 
         state= ServerModeState::Idle;
 

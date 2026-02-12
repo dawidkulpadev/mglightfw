@@ -236,7 +236,7 @@ def main():
     mac_b64 = base64.b64encode(mac_raw_bytes).decode('utf-8')
     dev_pub_b64 = base64.b64encode(dev_pub_bytes).decode('utf-8')
 
-    payload_str = f"2;{mac_b64};{dev_pub_b64}"
+    payload_str = f"2;-1;{mac_b64};{dev_pub_b64}"
     payload_bytes = payload_str.encode('utf-8')
 
     print(f"[*] Data to sign: {payload_str}")

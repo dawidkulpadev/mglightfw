@@ -57,14 +57,13 @@ class ConnectivityServer {
 public:
     enum class ServerModeState {Init, Idle, OtherBLELNServerFound};
 
-    ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig, Preferences *preferences,
-                       WiFiManager *wifiManager, Connectivity::OnApiResponseCb onApiResponse,
+    ConnectivityServer(BLELNServer *blelnServer, DeviceConfig *deviceConfig, WiFiManager *wifiManager,
+                       Connectivity::OnApiResponseCb onApiResponse,
                        Connectivity::RequestModeChangeCb requestModeChange);
     void loop();
     void apiTalksWorker();
     void requestApiTalk(char method, const char *mac, const char *picklock, const std::string &point, const std::string &data);
 private:
-    Preferences *prefs;
     DeviceConfig *config;
 
     BLELNServer *blelnServer;
