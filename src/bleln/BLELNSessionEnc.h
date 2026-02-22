@@ -27,6 +27,8 @@
 
 class BLELNSessionEnc {
 public:
+    BLELNSessionEnc();
+    ~BLELNSessionEnc();
     bool makeMyKeys(); // Initialize with new server keys
     bool deriveFriendsKey(const uint8_t* friendsPub65, const uint8_t* friendsNonce12, uint8_t *psk_salt, uint32_t sessionEpoch);
     bool decryptMessage(const uint8_t* in, size_t inLen, std::string &out);

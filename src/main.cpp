@@ -250,7 +250,7 @@ void setup() {
                                 connectivityLoop();
                                 vTaskDelete(nullptr);
                             },
-                            "conlp", 3000, nullptr, 5, nullptr, 1);
+                            "conlp", 8192, nullptr, 5, nullptr, 1);
 }
 int lastAPI=-(API_RUN_INTERVAL/2);
 

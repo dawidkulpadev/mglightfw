@@ -77,17 +77,20 @@ bool Encryption::ecdh_gen(uint8_t *pub65, mbedtls_ecp_group &g, mbedtls_mpi &d) 
     mbedtls_ecp_group_init(&g);
     mbedtls_mpi_init(&d);
     mbedtls_ecp_point_init(&Q);
-    if(mbedtls_ecp_group_load(&g, MBEDTLS_ECP_DP_SECP256R1)!=0)
-        return false;
 
-    if(mbedtls_ecp_gen_keypair(&g,&d,&Q,mbedtls_ctr_drbg_random,&ctr_drbg)!=0)
-        return false;
+    bool success = false;
 
-    size_t olen=0;
-    if(mbedtls_ecp_point_write_binary(&g,&Q,MBEDTLS_ECP_PF_UNCOMPRESSED,&olen,pub65,65)!=0)
-        return false;
+    if(mbedtls_ecp_group_load(&g, MBEDTLS_ECP_DP_SECP256R1) == 0) {
+        if(mbedtls_ecp_gen_keypair(&g, &d, &Q, mbedtls_ctr_drbg_random, &ctr_drbg) == 0) {
+            size_t olen = 0;
+            if(mbedtls_ecp_point_write_binary(&g, &Q, MBEDTLS_ECP_PF_UNCOMPRESSED, &olen, pub65, 65) == 0) {
+                success = (olen == 65 && pub65[0] == 0x04);
+            }
+        }
+    }
 
-    return (olen==65 && pub65[0]==0x04);
+    mbedtls_ecp_point_free(&Q);
+    return success;
 }
 
 bool Encryption::ecdh_shared(const mbedtls_ecp_group &g, const mbedtls_mpi &d, const uint8_t *pub65, uint8_t *out) {
@@ -143,6 +146,7 @@ bool Encryption::encryptAESGCM(const std::string *in, uint8_t *iv, uint8_t *tag,
         mbedtls_gcm_free(&g); return false;
     }
 
+    out->resize(in->length());
     if (mbedtls_gcm_crypt_and_tag(&g, MBEDTLS_GCM_ENCRYPT, in->length(),
                                   iv, 12, aad, 12,
                                   reinterpret_cast<const unsigned char *>(in->c_str()), (uint8_t*)out->data(), 16, tag) != 0) {

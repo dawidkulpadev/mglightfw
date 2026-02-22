@@ -181,3 +181,13 @@ uint8_t *BLELNSessionEnc::getMyNonce() {
 uint16_t BLELNSessionEnc::getSessionId() const {
     return sid;
 }
+
+BLELNSessionEnc::~BLELNSessionEnc() {
+    mbedtls_ecp_group_free(&grp);
+    mbedtls_mpi_free(&d);
+}
+
+BLELNSessionEnc::BLELNSessionEnc() {
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_mpi_init(&d);
+}

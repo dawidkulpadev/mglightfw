@@ -47,7 +47,7 @@ void ConnectivityServer::loop() {
                     static_cast<ConnectivityServer*>(arg)->apiTalksWorker();
                     vTaskDelete(nullptr);
                 },
-                "ATWrkr", 4096, this, 5, nullptr, 1);
+                "ATWrkr", 8192, this, 5, nullptr, 1);
 
         blelnServer->setOnMessageReceivedCallback([this](uint16_t cliH, const std::string &msg){
             this->onMessageReceived(cliH, msg);
@@ -110,12 +110,21 @@ void ConnectivityServer::onMessageReceived(uint16_t cliH, const std::string &msg
      *  * data - data string attached to API request
      */
     if(parts[0]=="$ATRQ"){
+        if(parts.size() < 7) {
+            return;
+        }
+
         uint16_t id= strtol(parts[1].c_str(), nullptr, 10);
         if(id!=0) {
             char method = parts[3].c_str()[0];
 
-            if (method == 'P' or method == 'G')
+            if (method == 'P' or method == 'G') {
+                if(parts[5][0]=='\"'){
+                    parts[5].erase(0, 1);
+                    parts[5].pop_back();
+                }
                 appendToAPITalksRequestQueue(cliH, id, parts[2], parts[3].c_str()[0], parts[4], parts[5], parts[6]);
+            }
         }
     } else if(parts[0]=="$NTP"){
         auto nows= static_cast<uint32_t>(time(nullptr));
@@ -126,8 +135,6 @@ void ConnectivityServer::onMessageReceived(uint16_t cliH, const std::string &msg
         uint32_t fwId= strtoul(parts[1].c_str(), nullptr, 10);
         uint16_t sector= strtol(parts[2].c_str(), nullptr, 10);
         uint16_t page= strtol(parts[3].c_str(), nullptr, 10);
-
-
     }
 }
 
@@ -137,8 +144,10 @@ void ConnectivityServer::handleAPIResponse() {
     if (xQueueReceive(apiTalksResponseQueue, &pkt, 0) == pdTRUE) {
         if(pkt.h!=UINT16_MAX) {
             Serial.println("Sending response");
-            char msgBuf[220];
-            sprintf(msgBuf, "$ATRS,%d,%d,%d,\"%s\"", pkt.id, pkt.errc, pkt.respCode, pkt.data);
+            char msgBuf[201];
+
+
+            snprintf(msgBuf, 200, "$ATRS,%d,%d,%d,\"%s\"", pkt.id, pkt.errc, pkt.respCode, pkt.data);
 
             bool r = blelnServer->sendEncrypted(pkt.h, msgBuf);
             Serial.print("Send result: ");
@@ -176,7 +185,15 @@ void ConnectivityServer::appendToAPITalksRequestQueue(uint16_t h, uint16_t id, c
         auto *dataHeapBuf = (char *) malloc(data.size() + 1);
         auto *macHeapBuf = (char *) malloc(mac.size()+1);
         auto *picklockHeapBuf = (char *) malloc(picklock.size()+1);
-        if (!apiPointHeapBuf and !dataHeapBuf and !macHeapBuf and !picklockHeapBuf) return;
+
+        if (!apiPointHeapBuf or !dataHeapBuf or !macHeapBuf or !picklockHeapBuf) {
+            if (apiPointHeapBuf) free(apiPointHeapBuf);
+            if (dataHeapBuf) free(dataHeapBuf);
+            if (macHeapBuf) free(macHeapBuf);
+            if (picklockHeapBuf) free(picklockHeapBuf);
+            return;
+        }
+
         strcpy(apiPointHeapBuf, apiPoint.c_str());
         strcpy(dataHeapBuf, data.c_str());
         strcpy(picklockHeapBuf, picklock.c_str());
@@ -186,6 +203,8 @@ void ConnectivityServer::appendToAPITalksRequestQueue(uint16_t h, uint16_t id, c
         if (xQueueSend(apiTalksRequestQueue, &pkt, 0) != pdPASS) {
             free(apiPointHeapBuf);
             free(dataHeapBuf);
+            free(macHeapBuf);
+            free(picklockHeapBuf);
         }
     }
 }
@@ -193,11 +212,13 @@ void ConnectivityServer::appendToAPITalksRequestQueue(uint16_t h, uint16_t id, c
 void ConnectivityServer::apiTalksWorker() {
     // TODO: Handle updates
 
+
     while(runAPITalksWorker){
         APITalkRequest pkt{};
         if ((apiTalksRequestQueue!= nullptr) and
             (xQueueReceive(apiTalksRequestQueue, &pkt, pdMS_TO_TICKS(10)) == pdTRUE)) {
             Serial.println("New request received");
+
             std::unique_ptr<WiFiClientSecure> client(new WiFiClientSecure);
             client->setCACertBundle(rootca_crt_bundle_start);
 
@@ -219,11 +240,11 @@ void ConnectivityServer::apiTalksWorker() {
             Serial.println(httpReq.c_str());
             Serial.println(pkt.data);
 
-            https.addHeader("x-device-id", pkt.mac);
-            https.addHeader("x-device-picklock", pkt.picklock);
-            https.addHeader("Content-Type", "application/json");
-
             if (https.begin(*client, httpReq.c_str())) {  // HTTPS
+                https.addHeader("x-device-id", pkt.mac);
+                https.addHeader("x-device-picklock", pkt.picklock);
+                https.addHeader("Content-Type", "application/json");
+
                 int httpCode = 0;
 
                 if (pkt.method == 'P') {
@@ -240,12 +261,13 @@ void ConnectivityServer::apiTalksWorker() {
                     appendToAPITalksResponseQueue(pkt.h, pkt.id, 3, httpCode, https.getString());
                     Serial.printf("[HTTPS] POST... failed, error: %s\n", HTTPClient::errorToString(httpCode).c_str());
                 }
-
-                https.end();
             } else {
                 appendToAPITalksResponseQueue(pkt.h, pkt.id, 2, 0, "");
                 Serial.println("Error https begin");
             }
+
+            https.end();
+            client->stop();
 
             free(pkt.apiPoint);
             free(pkt.data);
@@ -261,8 +283,8 @@ void ConnectivityServer::apiTalksWorker() {
 
         if((millis() - lastWaterMarkPrint) >= 10000) {
             UBaseType_t freeWords = uxTaskGetStackHighWaterMark(nullptr);
-            Serial.printf("Connectivity API talks stack free: %u\n\r",
-                          freeWords);
+            Serial.printf("ATWrkr Stack: %u | Free Heap: %u | Max Block: %u\n\r",
+                          freeWords, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
             lastWaterMarkPrint= millis();
         }
     }
